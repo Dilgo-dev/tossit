@@ -161,7 +161,7 @@ func main() {
 	http.Handle("/", r.WebHandler())
 
 	addr := ":" + port
-	log.Println("relay listening on " + addr + " (storage: " + storageDir + ", expire: " + expire.String() + ", max-size: " + relay.FormatSize(maxSize) + ")")
+	log.Println("relay listening on", addr) //nolint:gosec // log message from trusted CLI flags
 	srv := &http.Server{Addr: addr, ReadHeaderTimeout: 10 * time.Second}
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)
