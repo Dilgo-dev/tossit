@@ -24,6 +24,9 @@ func main() {
 	rateLimit := 20
 	authToken := os.Getenv("AUTH_TOKEN")
 	var allowIPs []string
+	var configPath string
+
+	flagSet := map[string]bool{}
 
 	for i := 1; i < len(os.Args); i++ {
 		switch os.Args[i] {
@@ -34,6 +37,7 @@ func main() {
 			fmt.Println("Usage: relay [options]")
 			fmt.Println()
 			fmt.Println("Options:")
+			fmt.Println("  --config <file>     Load config from JSON file")
 			fmt.Println("  --port <port>       Port to listen on (default: 8080)")
 			fmt.Println("  --storage <dir>     Storage directory (default: ./data)")
 			fmt.Println("  --expire <duration> Transfer expiry (default: 24h)")
@@ -43,15 +47,22 @@ func main() {
 			fmt.Println("  --allow-ips <list>  Comma-separated IP allowlist")
 			fmt.Println("  --version           Show version")
 			return
+		case "--config":
+			if i+1 < len(os.Args) {
+				i++
+				configPath = os.Args[i]
+			}
 		case "--port":
 			if i+1 < len(os.Args) {
 				i++
 				port = os.Args[i]
+				flagSet["port"] = true
 			}
 		case "--storage":
 			if i+1 < len(os.Args) {
 				i++
 				storageDir = os.Args[i]
+				flagSet["storage"] = true
 			}
 		case "--expire":
 			if i+1 < len(os.Args) {
@@ -59,12 +70,14 @@ func main() {
 				d, err := time.ParseDuration(os.Args[i])
 				if err == nil {
 					expire = d
+					flagSet["expire"] = true
 				}
 			}
 		case "--max-size":
 			if i+1 < len(os.Args) {
 				i++
-				maxSize = parseSize(os.Args[i])
+				maxSize = relay.ParseSize(os.Args[i])
+				flagSet["max-size"] = true
 			}
 		case "--rate-limit":
 			if i+1 < len(os.Args) {
@@ -72,12 +85,14 @@ func main() {
 				n, err := strconv.Atoi(os.Args[i])
 				if err == nil {
 					rateLimit = n
+					flagSet["rate-limit"] = true
 				}
 			}
 		case "--auth-token":
 			if i+1 < len(os.Args) {
 				i++
 				authToken = os.Args[i]
+				flagSet["auth-token"] = true
 			}
 		case "--allow-ips":
 			if i+1 < len(os.Args) {
@@ -87,7 +102,38 @@ func main() {
 						allowIPs = append(allowIPs, trimmed)
 					}
 				}
+				flagSet["allow-ips"] = true
 			}
+		}
+	}
+
+	if configPath != "" {
+		fc, err := relay.LoadConfig(configPath)
+		if err != nil {
+			log.Fatalf("failed to load config: %v", err)
+		}
+		if fc.Port != "" && !flagSet["port"] {
+			port = fc.Port
+		}
+		if fc.Storage != "" && !flagSet["storage"] {
+			storageDir = fc.Storage
+		}
+		if fc.Expire != "" && !flagSet["expire"] {
+			if d, err := time.ParseDuration(fc.Expire); err == nil {
+				expire = d
+			}
+		}
+		if fc.MaxSize != "" && !flagSet["max-size"] {
+			maxSize = relay.ParseSize(fc.MaxSize)
+		}
+		if fc.RateLimit != nil && !flagSet["rate-limit"] {
+			rateLimit = *fc.RateLimit
+		}
+		if fc.AuthToken != "" && !flagSet["auth-token"] && os.Getenv("AUTH_TOKEN") == "" {
+			authToken = fc.AuthToken
+		}
+		if len(fc.AllowIPs) > 0 && !flagSet["allow-ips"] {
+			allowIPs = fc.AllowIPs
 		}
 	}
 
@@ -113,39 +159,8 @@ func main() {
 	http.HandleFunc("/metrics", r.HandleMetrics)
 
 	log.Printf("relay listening on :%s (storage: %s, expire: %s, max-size: %s)",
-		port, storageDir, expire, formatSize(maxSize))
+		port, storageDir, expire, relay.FormatSize(maxSize))
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		log.Fatal(err)
-	}
-}
-
-func parseSize(s string) int64 {
-	s = strings.ToUpper(strings.TrimSpace(s))
-	multiplier := int64(1)
-	if strings.HasSuffix(s, "GB") {
-		multiplier = 1024 * 1024 * 1024
-		s = strings.TrimSuffix(s, "GB")
-	} else if strings.HasSuffix(s, "MB") {
-		multiplier = 1024 * 1024
-		s = strings.TrimSuffix(s, "MB")
-	} else if strings.HasSuffix(s, "KB") {
-		multiplier = 1024
-		s = strings.TrimSuffix(s, "KB")
-	}
-	n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
-	if err != nil {
-		return 2 * 1024 * 1024 * 1024
-	}
-	return n * multiplier
-}
-
-func formatSize(bytes int64) string {
-	switch {
-	case bytes >= 1024*1024*1024:
-		return fmt.Sprintf("%dGB", bytes/(1024*1024*1024))
-	case bytes >= 1024*1024:
-		return fmt.Sprintf("%dMB", bytes/(1024*1024))
-	default:
-		return fmt.Sprintf("%dKB", bytes/1024)
 	}
 }

@@ -22,6 +22,9 @@ func runRelay(args []string) {
 	rateLimit := 20
 	authToken := os.Getenv("AUTH_TOKEN")
 	var allowIPs []string
+	var configPath string
+
+	flagSet := map[string]bool{}
 
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -31,6 +34,7 @@ func runRelay(args []string) {
 			fmt.Println("Run a self-hosted relay server.")
 			fmt.Println()
 			fmt.Println("Options:")
+			fmt.Println("  --config <file>     Load config from JSON file")
 			fmt.Println("  --port <port>       Port to listen on (default: 8080)")
 			fmt.Println("  --storage <dir>     Storage directory (default: ./data)")
 			fmt.Println("  --expire <duration> Transfer expiry (default: 24h)")
@@ -39,15 +43,22 @@ func runRelay(args []string) {
 			fmt.Println("  --auth-token <tok>  Require token for access (or set AUTH_TOKEN env)")
 			fmt.Println("  --allow-ips <list>  Comma-separated IP allowlist")
 			return
+		case "--config":
+			if i+1 < len(args) {
+				i++
+				configPath = args[i]
+			}
 		case "--port":
 			if i+1 < len(args) {
 				i++
 				port = args[i]
+				flagSet["port"] = true
 			}
 		case "--storage":
 			if i+1 < len(args) {
 				i++
 				storageDir = args[i]
+				flagSet["storage"] = true
 			}
 		case "--expire":
 			if i+1 < len(args) {
@@ -55,12 +66,14 @@ func runRelay(args []string) {
 				d, err := time.ParseDuration(args[i])
 				if err == nil {
 					expire = d
+					flagSet["expire"] = true
 				}
 			}
 		case "--max-size":
 			if i+1 < len(args) {
 				i++
-				maxSize = parseRelaySize(args[i])
+				maxSize = relay.ParseSize(args[i])
+				flagSet["max-size"] = true
 			}
 		case "--rate-limit":
 			if i+1 < len(args) {
@@ -68,12 +81,14 @@ func runRelay(args []string) {
 				n, err := strconv.Atoi(args[i])
 				if err == nil {
 					rateLimit = n
+					flagSet["rate-limit"] = true
 				}
 			}
 		case "--auth-token":
 			if i+1 < len(args) {
 				i++
 				authToken = args[i]
+				flagSet["auth-token"] = true
 			}
 		case "--allow-ips":
 			if i+1 < len(args) {
@@ -83,7 +98,38 @@ func runRelay(args []string) {
 						allowIPs = append(allowIPs, trimmed)
 					}
 				}
+				flagSet["allow-ips"] = true
 			}
+		}
+	}
+
+	if configPath != "" {
+		fc, err := relay.LoadConfig(configPath)
+		if err != nil {
+			log.Fatalf("failed to load config: %v", err)
+		}
+		if fc.Port != "" && !flagSet["port"] {
+			port = fc.Port
+		}
+		if fc.Storage != "" && !flagSet["storage"] {
+			storageDir = fc.Storage
+		}
+		if fc.Expire != "" && !flagSet["expire"] {
+			if d, err := time.ParseDuration(fc.Expire); err == nil {
+				expire = d
+			}
+		}
+		if fc.MaxSize != "" && !flagSet["max-size"] {
+			maxSize = relay.ParseSize(fc.MaxSize)
+		}
+		if fc.RateLimit != nil && !flagSet["rate-limit"] {
+			rateLimit = *fc.RateLimit
+		}
+		if fc.AuthToken != "" && !flagSet["auth-token"] && os.Getenv("AUTH_TOKEN") == "" {
+			authToken = fc.AuthToken
+		}
+		if len(fc.AllowIPs) > 0 && !flagSet["allow-ips"] {
+			allowIPs = fc.AllowIPs
 		}
 	}
 
@@ -109,39 +155,8 @@ func runRelay(args []string) {
 	http.HandleFunc("/metrics", r.HandleMetrics)
 
 	log.Printf("relay listening on :%s (storage: %s, expire: %s, max-size: %s)",
-		port, storageDir, expire, formatRelaySize(maxSize))
+		port, storageDir, expire, relay.FormatSize(maxSize))
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		log.Fatal(err)
-	}
-}
-
-func parseRelaySize(s string) int64 {
-	s = strings.ToUpper(strings.TrimSpace(s))
-	multiplier := int64(1)
-	if strings.HasSuffix(s, "GB") {
-		multiplier = 1024 * 1024 * 1024
-		s = strings.TrimSuffix(s, "GB")
-	} else if strings.HasSuffix(s, "MB") {
-		multiplier = 1024 * 1024
-		s = strings.TrimSuffix(s, "MB")
-	} else if strings.HasSuffix(s, "KB") {
-		multiplier = 1024
-		s = strings.TrimSuffix(s, "KB")
-	}
-	n, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)
-	if err != nil {
-		return 2 * 1024 * 1024 * 1024
-	}
-	return n * multiplier
-}
-
-func formatRelaySize(bytes int64) string {
-	switch {
-	case bytes >= 1024*1024*1024:
-		return fmt.Sprintf("%dGB", bytes/(1024*1024*1024))
-	case bytes >= 1024*1024:
-		return fmt.Sprintf("%dMB", bytes/(1024*1024))
-	default:
-		return fmt.Sprintf("%dKB", bytes/1024)
 	}
 }
