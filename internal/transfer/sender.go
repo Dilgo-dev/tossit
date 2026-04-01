@@ -11,6 +11,7 @@ import (
 	"github.com/Dilgo-dev/tossit/internal/crypto"
 	"github.com/Dilgo-dev/tossit/internal/progress"
 	"github.com/Dilgo-dev/tossit/internal/protocol"
+	"github.com/Dilgo-dev/tossit/internal/qr"
 	"github.com/coder/websocket"
 )
 
@@ -63,9 +64,12 @@ func Send(ctx context.Context, opts SendOptions) error {
 	httpURL = strings.Replace(httpURL, "ws://", "http://", 1)
 	httpURL = strings.TrimSuffix(httpURL, "/ws")
 
+	browserURL := fmt.Sprintf("%s/d/%s", httpURL, code)
+
 	fmt.Println("Code:", code)
 	fmt.Printf("On another machine, run: tossit receive %s\n", code)
-	fmt.Printf("Or open in browser: %s/d/%s\n", httpURL, code)
+	fmt.Printf("Or open in browser: %s\n", browserURL)
+	qr.Print(browserURL)
 
 	var key []byte
 
