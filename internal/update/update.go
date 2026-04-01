@@ -17,11 +17,11 @@ type release struct {
 }
 
 func Check(current string) (string, bool, error) {
-	resp, err := http.Get("https://api.github.com/repos/" + repo + "/releases/latest")
+	resp, err := http.Get("https://api.github.com/repos/" + repo + "/releases/latest") //nolint:gosec // URL is constant
 	if err != nil {
 		return "", false, err
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return "", false, fmt.Errorf("github api returned %d", resp.StatusCode)
@@ -65,11 +65,11 @@ func Run(current string) error {
 	url := fmt.Sprintf("https://github.com/%s/releases/download/%s/tossit-%s-%s%s",
 		repo, latest, goos, goarch, ext)
 
-	resp, err := http.Get(url)
+	resp, err := http.Get(url) //nolint:gosec // URL built from trusted constants
 	if err != nil {
 		return fmt.Errorf("download failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != 200 {
 		return fmt.Errorf("download failed: %d", resp.StatusCode)
@@ -79,26 +79,23 @@ func Run(current string) error {
 	if err != nil {
 		return err
 	}
-	exe, err = resolveSymlink(exe)
-	if err != nil {
-		return err
-	}
+	exe = resolveSymlink(exe)
 
 	tmp := exe + ".new"
-	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755)
+	f, err := os.OpenFile(tmp, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o755) //nolint:gosec // path derived from own executable
 	if err != nil {
 		return err
 	}
 
 	if _, err := io.Copy(f, resp.Body); err != nil {
-		f.Close()
-		os.Remove(tmp)
+		_ = f.Close()
+		_ = os.Remove(tmp)
 		return err
 	}
-	f.Close()
+	_ = f.Close()
 
 	if err := os.Rename(tmp, exe); err != nil {
-		os.Remove(tmp)
+		_ = os.Remove(tmp)
 		return fmt.Errorf("failed to replace binary: %w", err)
 	}
 
@@ -106,14 +103,14 @@ func Run(current string) error {
 	return nil
 }
 
-func resolveSymlink(path string) (string, error) {
+func resolveSymlink(path string) string {
 	resolved, err := os.Readlink(path)
 	if err != nil {
-		return path, nil
+		return path
 	}
 	if !strings.HasPrefix(resolved, "/") {
 		dir := path[:strings.LastIndex(path, "/")+1]
 		resolved = dir + resolved
 	}
-	return resolved, nil
+	return resolved
 }

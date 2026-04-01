@@ -19,7 +19,7 @@ type FileConfig struct {
 }
 
 func LoadConfig(path string) (FileConfig, error) {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) //nolint:gosec // config path from trusted CLI flag
 	if err != nil {
 		return FileConfig{}, err
 	}
@@ -33,13 +33,14 @@ func LoadConfig(path string) (FileConfig, error) {
 func ParseSize(s string) int64 {
 	s = strings.ToUpper(strings.TrimSpace(s))
 	multiplier := int64(1)
-	if strings.HasSuffix(s, "GB") {
+	switch {
+	case strings.HasSuffix(s, "GB"):
 		multiplier = 1024 * 1024 * 1024
 		s = strings.TrimSuffix(s, "GB")
-	} else if strings.HasSuffix(s, "MB") {
+	case strings.HasSuffix(s, "MB"):
 		multiplier = 1024 * 1024
 		s = strings.TrimSuffix(s, "MB")
-	} else if strings.HasSuffix(s, "KB") {
+	case strings.HasSuffix(s, "KB"):
 		multiplier = 1024
 		s = strings.TrimSuffix(s, "KB")
 	}
