@@ -56,7 +56,7 @@ func New(cfg Config) *Relay {
 	if cfg.MaxSize == 0 {
 		cfg.MaxSize = 2 * 1024 * 1024 * 1024
 	}
-	os.MkdirAll(cfg.StorageDir, 0o755)
+	_ = os.MkdirAll(cfg.StorageDir, 0o755)
 	return &Relay{sessions: make(map[string]*session), cfg: cfg}
 }
 
@@ -68,7 +68,7 @@ func (r *Relay) HandleConn(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 	conn.SetReadLimit(10 * 1024 * 1024)
-	defer conn.CloseNow()
+	defer func() { _ = conn.CloseNow() }()
 
 	_, data, err := conn.Read(req.Context())
 	if err != nil {
@@ -132,7 +132,7 @@ func (r *Relay) handleRegister(conn *websocket.Conn, req *http.Request, code str
 
 func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code string, s *session) {
 	dir := filepath.Join(r.cfg.StorageDir, code)
-	os.MkdirAll(dir, 0o755)
+	_ = os.MkdirAll(dir, 0o755)
 
 	dataPath := filepath.Join(dir, "data")
 	f, err := os.Create(dataPath)
@@ -141,7 +141,7 @@ func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code
 		r.removeSession(code)
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	var totalBytes int64
 	done := false
@@ -178,13 +178,13 @@ func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code
 	for !done {
 		_, data, err := conn.Read(req.Context())
 		if err != nil {
-			os.RemoveAll(dir)
+			_ = os.RemoveAll(dir)
 			r.removeSession(code)
 			return
 		}
 		if err := writePayload(data); err != nil {
 			sendError(req.Context(), conn, err.Error())
-			os.RemoveAll(dir)
+			_ = os.RemoveAll(dir)
 			r.removeSession(code)
 			return
 		}
@@ -195,7 +195,7 @@ func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code
 		ExpiresAt: time.Now().Add(r.cfg.Expire),
 	}
 	metaJSON, _ := json.Marshal(meta)
-	os.WriteFile(filepath.Join(dir, "meta.json"), metaJSON, 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "meta.json"), metaJSON, 0o644)
 
 	r.mu.Lock()
 	s.stored = true
@@ -203,8 +203,8 @@ func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code
 	r.mu.Unlock()
 
 	stored := protocol.Encode(protocol.Message{Type: protocol.MsgStored})
-	conn.Write(req.Context(), websocket.MessageBinary, stored)
-	conn.Close(websocket.StatusNormalClosure, "stored")
+	_ = conn.Write(req.Context(), websocket.MessageBinary, stored)
+	_ = conn.Close(websocket.StatusNormalClosure, "stored")
 }
 
 func (r *Relay) handleStreamMode(conn *websocket.Conn, req *http.Request, s *session) {
@@ -311,7 +311,7 @@ func (r *Relay) hasStoredTransfer(code string) bool {
 func (r *Relay) replayStored(conn *websocket.Conn, req *http.Request, code string) {
 	defer func() {
 		r.removeSession(code)
-		os.RemoveAll(filepath.Join(r.cfg.StorageDir, code))
+		_ = os.RemoveAll(filepath.Join(r.cfg.StorageDir, code))
 	}()
 
 	stored := protocol.Encode(protocol.Message{Type: protocol.MsgStored})
@@ -344,7 +344,7 @@ func (r *Relay) replayStored(conn *websocket.Conn, req *http.Request, code strin
 		}
 	}
 
-	conn.Close(websocket.StatusNormalClosure, "done")
+	_ = conn.Close(websocket.StatusNormalClosure, "done")
 }
 
 func (r *Relay) removeSession(code string) {
@@ -386,7 +386,7 @@ func (r *Relay) cleanup() {
 			continue
 		}
 		if time.Now().After(meta.ExpiresAt) {
-			os.RemoveAll(filepath.Join(r.cfg.StorageDir, entry.Name()))
+			_ = os.RemoveAll(filepath.Join(r.cfg.StorageDir, entry.Name()))
 			r.removeSession(entry.Name())
 		}
 	}
@@ -411,7 +411,7 @@ func bridge(sender, receiver *websocket.Conn, done chan struct{}) {
 				return
 			}
 			if msg.Type == protocol.MsgClose {
-				to.Write(ctx, websocket.MessageBinary, data)
+				_ = to.Write(ctx, websocket.MessageBinary, data)
 				return
 			}
 			if msg.Type == protocol.MsgData {
