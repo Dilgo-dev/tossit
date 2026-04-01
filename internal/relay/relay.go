@@ -19,6 +19,7 @@ import (
 )
 
 type Config struct {
+	Port       string
 	StorageDir string
 	Expire     time.Duration
 	MaxSize    int64

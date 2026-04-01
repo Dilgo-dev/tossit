@@ -1,22 +1,65 @@
 package relay
 
 import (
-	_ "embed"
+	"embed"
+	"fmt"
+	"io/fs"
 	"net/http"
 	"strings"
 )
 
-//go:embed web/receive.html
-var receiveHTML []byte
+//go:embed web/dist
+var webDist embed.FS
 
-func (r *Relay) HandleWeb(w http.ResponseWriter, req *http.Request) {
-	if !strings.HasPrefix(req.URL.Path, "/d/") {
-		http.NotFound(w, req)
-		return
+func (r *Relay) WebHandler() http.Handler {
+	dist, err := fs.Sub(webDist, "web/dist")
+	if err != nil {
+		panic(err)
 	}
+	fileServer := http.FileServer(http.FS(dist))
+
+	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		// /d/<code> redirects to SPA receive route
+		if strings.HasPrefix(req.URL.Path, "/d/") {
+			code := strings.TrimPrefix(req.URL.Path, "/d/")
+			target := "/#/receive/" + code
+			if q := req.URL.RawQuery; q != "" {
+				target += "?" + q
+			}
+			http.Redirect(w, req, target, http.StatusFound)
+			return
+		}
+
+		if !r.checkAccess(w, req) {
+			return
+		}
+
+		// Try serving static file first
+		path := req.URL.Path
+		if path == "/" {
+			path = "/index.html"
+		}
+		if _, err := fs.Stat(dist, strings.TrimPrefix(path, "/")); err == nil {
+			fileServer.ServeHTTP(w, req)
+			return
+		}
+
+		// SPA fallback: serve index.html for unknown routes
+		req.URL.Path = "/"
+		fileServer.ServeHTTP(w, req)
+	})
+}
+
+func (r *Relay) HandleConfig(w http.ResponseWriter, req *http.Request) {
 	if !r.checkAccess(w, req) {
 		return
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write(receiveHTML)
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = fmt.Fprintf(w, `{"port":%q,"storage":%q,"expire":%q,"max_size":%q,"rate_limit":%d}`,
+		r.cfg.Port,
+		r.cfg.StorageDir,
+		r.cfg.Expire.String(),
+		FormatSize(r.cfg.MaxSize),
+		r.cfg.RateLimit,
+	)
 }

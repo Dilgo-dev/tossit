@@ -138,6 +138,7 @@ func main() {
 	}
 
 	cfg := relay.Config{
+		Port:       port,
 		StorageDir: storageDir,
 		Expire:     expire,
 		MaxSize:    maxSize,
@@ -154,9 +155,10 @@ func main() {
 	go r.StartCleanup(ctx)
 
 	http.HandleFunc("/ws", r.HandleConn)
-	http.HandleFunc("/d/", r.HandleWeb)
 	http.HandleFunc("/health", r.HandleHealth)
 	http.HandleFunc("/metrics", r.HandleMetrics)
+	http.HandleFunc("/api/config", r.HandleConfig)
+	http.Handle("/", r.WebHandler())
 
 	log.Printf("relay listening on :%s (storage: %s, expire: %s, max-size: %s)",
 		port, storageDir, expire, relay.FormatSize(maxSize))
