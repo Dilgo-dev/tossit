@@ -32,16 +32,15 @@ func main() {
 	case "--help", "-h", "help":
 		printHelp()
 	default:
-		fmt.Fprintf(os.Stderr, "Unknown command: %s\n\n", os.Args[1])
-		printHelp()
-		os.Exit(1)
+		runSend(os.Args[1:])
 	}
 }
 
 func printHelp() {
 	fmt.Printf("tossit %s - file transfer tool\n\n", version)
 	fmt.Println("Usage:")
-	fmt.Println("  tossit send <file|dir> ...    Upload and share files")
+	fmt.Println("  tossit <file|dir> ...         Upload and share files")
+	fmt.Println("  tossit send <file|dir> ...    Same as above (explicit)")
 	fmt.Println("  tossit receive <code>         Download files")
 	fmt.Println("  tossit relay                 Run a self-hosted relay server")
 	fmt.Println("  tossit update                Check for updates")
