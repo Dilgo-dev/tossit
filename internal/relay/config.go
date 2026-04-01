@@ -9,13 +9,16 @@ import (
 )
 
 type FileConfig struct {
-	Port      string   `json:"port"`
-	Storage   string   `json:"storage"`
-	Expire    string   `json:"expire"`
-	MaxSize   string   `json:"max_size"`
-	RateLimit *int     `json:"rate_limit"`
-	AuthToken string   `json:"auth_token"`
-	AllowIPs  []string `json:"allow_ips"`
+	Port          string   `json:"port"`
+	Storage       string   `json:"storage"`
+	Expire        string   `json:"expire"`
+	MaxSize       string   `json:"max_size"`
+	RateLimit     *int     `json:"rate_limit"`
+	AuthToken     string   `json:"auth_token"`
+	AllowIPs      []string `json:"allow_ips"`
+	UIEnabled     *bool    `json:"ui"`
+	UIPassword    string   `json:"ui_password"`
+	AdminPassword string   `json:"admin_password"`
 }
 
 func LoadConfig(path string) (FileConfig, error) {

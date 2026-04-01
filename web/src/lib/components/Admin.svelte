@@ -21,19 +21,25 @@
   let config = $state<Config | null>(null)
   let error = $state('')
   let loading = $state(true)
+  let needsAuth = $state(false)
+  let adminPass = $state('')
+  let authError = $state('')
 
   async function fetchData() {
     try {
-      const [healthRes, configRes] = await Promise.all([
-        fetch(getApiUrl('/health', token)),
-        fetch(getApiUrl('/api/config', token)).catch(() => null),
-      ])
-
+      const healthRes = await fetch(getApiUrl('/health', token))
       if (!healthRes.ok) throw new Error(`Health: ${healthRes.status}`)
       health = await healthRes.json()
 
-      if (configRes?.ok) {
+      const configRes = await fetch(getApiUrl('/api/config', token))
+      if (configRes.status === 401) {
+        needsAuth = true
+        loading = false
+        return
+      }
+      if (configRes.ok) {
         config = await configRes.json()
+        needsAuth = false
       }
 
       error = ''
@@ -42,6 +48,22 @@
     } finally {
       loading = false
     }
+  }
+
+  async function loginAdmin() {
+    authError = ''
+    const res = await fetch('/api/login/admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+      body: 'password=' + encodeURIComponent(adminPass),
+    })
+    if (!res.ok) {
+      authError = 'Invalid password'
+      return
+    }
+    needsAuth = false
+    adminPass = ''
+    fetchData()
   }
 
   $effect(() => {
@@ -67,13 +89,54 @@
         Loading...
       </div>
     </div>
+  {:else if needsAuth}
+    <div class="animate-in rounded-lg border border-border bg-surface p-8">
+      <div class="mb-4 font-mono text-xs uppercase tracking-widest text-text-muted">Admin authentication required</div>
+      <div class="flex gap-3">
+        <input
+          type="password"
+          placeholder="admin password"
+          bind:value={adminPass}
+          onkeydown={(e) => { if (e.key === 'Enter') loginAdmin() }}
+          class="flex-1 rounded border border-border bg-bg px-4 py-2.5 font-mono text-sm text-white placeholder:text-text-muted/50 transition-colors focus:border-accent/40 focus:outline-none"
+        />
+        <button
+          class="rounded bg-accent px-5 py-2.5 font-mono text-sm font-bold text-bg transition-all hover:bg-accent-dim"
+          onclick={loginAdmin}
+        >Enter</button>
+      </div>
+      {#if authError}
+        <p class="mt-3 font-mono text-xs text-error">{authError}</p>
+      {/if}
+    </div>
+
+    <!-- Still show health if available -->
+    {#if health}
+      <div class="mt-4 animate-in rounded-lg border border-border bg-surface overflow-hidden">
+        <div class="border-b border-border px-5 py-3">
+          <span class="font-mono text-[10px] uppercase tracking-widest text-text-muted">Health</span>
+        </div>
+        <div class="divide-y divide-border">
+          <div class="flex items-center justify-between px-5 py-3">
+            <span class="text-sm text-text-dim">Status</span>
+            <span class="flex items-center gap-2 font-mono text-sm">
+              <span class="h-2 w-2 rounded-full {health.status === 'ok' ? 'bg-success' : 'bg-error'}"></span>
+              <span class="{health.status === 'ok' ? 'text-success' : 'text-error'}">{health.status}</span>
+            </span>
+          </div>
+          <div class="flex items-center justify-between px-5 py-3">
+            <span class="text-sm text-text-dim">Version</span>
+            <span class="font-mono text-sm text-white">{health.version}</span>
+          </div>
+        </div>
+      </div>
+    {/if}
   {:else if error}
     <div class="rounded border border-error/30 bg-error/5 px-4 py-3 font-mono text-sm text-error">
       {error}
     </div>
   {:else}
     <div class="space-y-4">
-      <!-- Health status -->
       {#if health}
         <div class="animate-in rounded-lg border border-border bg-surface overflow-hidden">
           <div class="border-b border-border px-5 py-3">
@@ -99,9 +162,8 @@
         </div>
       {/if}
 
-      <!-- Config -->
       {#if config}
-        <div class="animate-in delay-1 rounded-lg border border-border bg-surface overflow-hidden">
+        <div class="animate-in rounded-lg border border-border bg-surface overflow-hidden">
           <div class="border-b border-border px-5 py-3">
             <span class="font-mono text-[10px] uppercase tracking-widest text-text-muted">Configuration</span>
           </div>
@@ -122,8 +184,7 @@
         </div>
       {/if}
 
-      <!-- Connection info -->
-      <div class="animate-in delay-2 rounded-lg border border-border bg-surface p-5">
+      <div class="animate-in rounded-lg border border-border bg-surface p-5">
         <div class="mb-3 font-mono text-[10px] uppercase tracking-widest text-text-muted">Relay endpoint</div>
         <code class="block rounded bg-bg px-4 py-2.5 font-mono text-xs text-accent/70">
           {location.origin}/ws

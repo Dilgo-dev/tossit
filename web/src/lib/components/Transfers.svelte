@@ -15,18 +15,43 @@
   let metrics = $state<Metrics | null>(null)
   let error = $state('')
   let loading = $state(true)
+  let needsAuth = $state(false)
+  let adminPass = $state('')
+  let authError = $state('')
 
   async function fetchMetrics() {
     try {
       const res = await fetch(getApiUrl('/metrics', token))
+      if (res.status === 401) {
+        needsAuth = true
+        loading = false
+        return
+      }
       if (!res.ok) throw new Error(`${res.status}`)
       metrics = await res.json()
+      needsAuth = false
       error = ''
     } catch (e: any) {
       error = e.message || 'Failed to fetch'
     } finally {
       loading = false
     }
+  }
+
+  async function loginAdmin() {
+    authError = ''
+    const res = await fetch('/api/login/admin', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'Accept': 'application/json' },
+      body: 'password=' + encodeURIComponent(adminPass),
+    })
+    if (!res.ok) {
+      authError = 'Invalid password'
+      return
+    }
+    needsAuth = false
+    adminPass = ''
+    fetchMetrics()
   }
 
   $effect(() => {
@@ -64,6 +89,26 @@
       <div class="font-mono text-xs uppercase tracking-widest text-text-muted" style="animation: pulse-glow 1.5s ease-in-out infinite">
         Loading metrics...
       </div>
+    </div>
+  {:else if needsAuth}
+    <div class="animate-in rounded-lg border border-border bg-surface p-8">
+      <div class="mb-4 font-mono text-xs uppercase tracking-widest text-text-muted">Admin authentication required</div>
+      <div class="flex gap-3">
+        <input
+          type="password"
+          placeholder="admin password"
+          bind:value={adminPass}
+          onkeydown={(e) => { if (e.key === 'Enter') loginAdmin() }}
+          class="flex-1 rounded border border-border bg-bg px-4 py-2.5 font-mono text-sm text-white placeholder:text-text-muted/50 transition-colors focus:border-accent/40 focus:outline-none"
+        />
+        <button
+          class="rounded bg-accent px-5 py-2.5 font-mono text-sm font-bold text-bg transition-all hover:bg-accent-dim"
+          onclick={loginAdmin}
+        >Enter</button>
+      </div>
+      {#if authError}
+        <p class="mt-3 font-mono text-xs text-error">{authError}</p>
+      {/if}
     </div>
   {:else if error}
     <div class="rounded border border-error/30 bg-error/5 px-4 py-3 font-mono text-sm text-error">

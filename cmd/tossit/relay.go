@@ -23,6 +23,9 @@ func runRelay(args []string) {
 	authToken := os.Getenv("AUTH_TOKEN")
 	var allowIPs []string
 	var configPath string
+	uiEnabled := true
+	uiPassword := ""
+	adminPassword := ""
 
 	flagSet := map[string]bool{}
 
@@ -42,6 +45,9 @@ func runRelay(args []string) {
 			fmt.Println("  --rate-limit <n>    Max connections per minute per IP (default: 20, 0=off)")
 			fmt.Println("  --auth-token <tok>  Require token for access (or set AUTH_TOKEN env)")
 			fmt.Println("  --allow-ips <list>  Comma-separated IP allowlist")
+			fmt.Println("  --ui <bool>         Enable web UI (default: true)")
+			fmt.Println("  --ui-password <pw>  Password to access web UI")
+			fmt.Println("  --admin-password <> Admin password (default: auto-generated, 'off' to disable)")
 			return
 		case "--config":
 			if i+1 < len(args) {
@@ -100,6 +106,24 @@ func runRelay(args []string) {
 				}
 				flagSet["allow-ips"] = true
 			}
+		case "--ui":
+			if i+1 < len(args) {
+				i++
+				uiEnabled = args[i] != "false"
+				flagSet["ui"] = true
+			}
+		case "--ui-password":
+			if i+1 < len(args) {
+				i++
+				uiPassword = args[i]
+				flagSet["ui-password"] = true
+			}
+		case "--admin-password":
+			if i+1 < len(args) {
+				i++
+				adminPassword = args[i]
+				flagSet["admin-password"] = true
+			}
 		}
 	}
 
@@ -131,17 +155,29 @@ func runRelay(args []string) {
 		if len(fc.AllowIPs) > 0 && !flagSet["allow-ips"] {
 			allowIPs = fc.AllowIPs
 		}
+		if fc.UIEnabled != nil && !flagSet["ui"] {
+			uiEnabled = *fc.UIEnabled
+		}
+		if fc.UIPassword != "" && !flagSet["ui-password"] {
+			uiPassword = fc.UIPassword
+		}
+		if fc.AdminPassword != "" && !flagSet["admin-password"] {
+			adminPassword = fc.AdminPassword
+		}
 	}
 
 	cfg := relay.Config{
-		Port:       port,
-		StorageDir: storageDir,
-		Expire:     expire,
-		MaxSize:    maxSize,
-		Version:    version,
-		RateLimit:  rateLimit,
-		AuthToken:  authToken,
-		AllowIPs:   allowIPs,
+		Port:          port,
+		StorageDir:    storageDir,
+		Expire:        expire,
+		MaxSize:       maxSize,
+		Version:       version,
+		RateLimit:     rateLimit,
+		AuthToken:     authToken,
+		AllowIPs:      allowIPs,
+		UIEnabled:     uiEnabled,
+		UIPassword:    uiPassword,
+		AdminPassword: adminPassword,
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -154,6 +190,8 @@ func runRelay(args []string) {
 	http.HandleFunc("/health", r.HandleHealth)
 	http.HandleFunc("/metrics", r.HandleMetrics)
 	http.HandleFunc("/api/config", r.HandleConfig)
+	http.HandleFunc("/api/login", r.HandleLogin)
+	http.HandleFunc("/api/login/admin", r.HandleAdminLogin)
 	http.Handle("/", r.WebHandler())
 
 	addr := ":" + port
