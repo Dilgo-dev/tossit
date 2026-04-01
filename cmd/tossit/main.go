@@ -20,6 +20,8 @@ func main() {
 		runSend(os.Args[2:])
 	case "receive", "recv", "r":
 		runReceive(os.Args[2:])
+	case "relay":
+		runRelay(os.Args[2:])
 	case "update":
 		if err := update.Run(version); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
@@ -41,11 +43,13 @@ func printHelp() {
 	fmt.Println("Usage:")
 	fmt.Println("  tossit send <file|dir> ...    Upload and share files")
 	fmt.Println("  tossit receive <code>         Download files")
+	fmt.Println("  tossit relay                 Run a self-hosted relay server")
 	fmt.Println("  tossit update                Check for updates")
 	fmt.Println()
 	fmt.Println("Options:")
-	fmt.Println("  --relay <url>    Relay server URL (default: wss://relay.tossit.dev/ws)")
-	fmt.Println("  --stream         Real-time streaming (both sides must be online)")
-	fmt.Println("  --version        Show version")
-	fmt.Println("  --help           Show this help")
+	fmt.Println("  --relay <url>      Relay server URL (default: wss://relay.tossit.dev/ws)")
+	fmt.Println("  --relay-token <t>  Auth token for private relay servers")
+	fmt.Println("  --stream           Real-time streaming (both sides must be online)")
+	fmt.Println("  --version          Show version")
+	fmt.Println("  --help             Show this help")
 }

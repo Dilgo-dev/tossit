@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/Dilgo-dev/tossit/internal/protocol"
@@ -21,6 +22,10 @@ type Config struct {
 	StorageDir string
 	Expire     time.Duration
 	MaxSize    int64
+	Version    string
+	RateLimit  int
+	AuthToken  string
+	AllowIPs   []string
 }
 
 type session struct {
@@ -41,9 +46,16 @@ type transferMeta struct {
 }
 
 type Relay struct {
-	mu       sync.Mutex
-	sessions map[string]*session
-	cfg      Config
+	mu        sync.Mutex
+	sessions  map[string]*session
+	cfg       Config
+	startedAt time.Time
+	limiter   *rateLimiter
+	stats     struct {
+		transfersCompleted atomic.Int64
+		bytesRelayed       atomic.Int64
+		errorsTotal        atomic.Int64
+	}
 }
 
 func New(cfg Config) *Relay {
@@ -57,10 +69,51 @@ func New(cfg Config) *Relay {
 		cfg.MaxSize = 2 * 1024 * 1024 * 1024
 	}
 	_ = os.MkdirAll(cfg.StorageDir, 0o750)
-	return &Relay{sessions: make(map[string]*session), cfg: cfg}
+	r := &Relay{
+		sessions:  make(map[string]*session),
+		cfg:       cfg,
+		startedAt: time.Now(),
+	}
+	if cfg.RateLimit > 0 {
+		r.limiter = newRateLimiter(cfg.RateLimit, time.Minute)
+	}
+	return r
+}
+
+func (r *Relay) checkAccess(w http.ResponseWriter, req *http.Request) bool {
+	if len(r.cfg.AllowIPs) > 0 {
+		ip := clientIP(req)
+		allowed := false
+		for _, a := range r.cfg.AllowIPs {
+			if a == ip {
+				allowed = true
+				break
+			}
+		}
+		if !allowed {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return false
+		}
+	}
+	if r.cfg.AuthToken != "" {
+		token := req.URL.Query().Get("token")
+		if token != r.cfg.AuthToken {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return false
+		}
+	}
+	return true
 }
 
 func (r *Relay) HandleConn(w http.ResponseWriter, req *http.Request) {
+	if !r.checkAccess(w, req) {
+		return
+	}
+	if r.limiter != nil && !r.limiter.allow(clientIP(req)) {
+		http.Error(w, "rate limit exceeded", http.StatusTooManyRequests)
+		return
+	}
+
 	conn, err := websocket.Accept(w, req, &websocket.AcceptOptions{
 		InsecureSkipVerify: true,
 	})
@@ -77,14 +130,14 @@ func (r *Relay) HandleConn(w http.ResponseWriter, req *http.Request) {
 
 	msg, err := protocol.Decode(data)
 	if err != nil {
-		sendError(req.Context(), conn, "invalid message")
+		r.sendError(req.Context(), conn, "invalid message")
 		return
 	}
 
 	switch msg.Type {
 	case protocol.MsgRegister:
 		if len(msg.Payload) < 2 {
-			sendError(req.Context(), conn, "invalid register payload")
+			r.sendError(req.Context(), conn, "invalid register payload")
 			return
 		}
 		mode := msg.Payload[0]
@@ -95,7 +148,7 @@ func (r *Relay) HandleConn(w http.ResponseWriter, req *http.Request) {
 	case protocol.MsgBrowserJoin:
 		r.handleBrowserJoin(conn, req, string(msg.Payload))
 	default:
-		sendError(req.Context(), conn, "expected register or join")
+		r.sendError(req.Context(), conn, "expected register or join")
 	}
 }
 
@@ -103,7 +156,7 @@ func (r *Relay) handleRegister(conn *websocket.Conn, req *http.Request, code str
 	r.mu.Lock()
 	if _, exists := r.sessions[code]; exists {
 		r.mu.Unlock()
-		sendError(req.Context(), conn, "code already in use")
+		r.sendError(req.Context(), conn, "code already in use")
 		return
 	}
 	s := &session{
@@ -137,7 +190,7 @@ func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code
 	dataPath := filepath.Join(dir, "data")
 	f, err := os.Create(dataPath)
 	if err != nil {
-		sendError(req.Context(), conn, "storage error")
+		r.sendError(req.Context(), conn, "storage error")
 		r.removeSession(code)
 		return
 	}
@@ -155,7 +208,9 @@ func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code
 			return nil
 		}
 
-		totalBytes += int64(len(msg.Payload))
+		chunkSize := int64(len(msg.Payload))
+		totalBytes += chunkSize
+		r.stats.bytesRelayed.Add(chunkSize)
 		if totalBytes > r.cfg.MaxSize {
 			return fmt.Errorf("file too large (max %d bytes)", r.cfg.MaxSize)
 		}
@@ -183,7 +238,7 @@ func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code
 			return
 		}
 		if err := writePayload(data); err != nil {
-			sendError(req.Context(), conn, err.Error())
+			r.sendError(req.Context(), conn, err.Error())
 			_ = os.RemoveAll(dir)
 			r.removeSession(code)
 			return
@@ -221,6 +276,7 @@ func (r *Relay) handleStreamMode(conn *websocket.Conn, req *http.Request, s *ses
 	}
 
 	bridge(s.sender, s.receiver, s.bridgeDone)
+	r.stats.transfersCompleted.Add(1)
 }
 
 func (r *Relay) handleJoin(conn *websocket.Conn, req *http.Request, code string) {
@@ -232,7 +288,7 @@ func (r *Relay) handleJoin(conn *websocket.Conn, req *http.Request, code string)
 			r.replayStored(conn, req, code)
 			return
 		}
-		sendError(req.Context(), conn, "invalid code")
+		r.sendError(req.Context(), conn, "invalid code")
 		return
 	}
 	if s.stored {
@@ -242,7 +298,7 @@ func (r *Relay) handleJoin(conn *websocket.Conn, req *http.Request, code string)
 	}
 	if s.receiver != nil {
 		r.mu.Unlock()
-		sendError(req.Context(), conn, "session full")
+		r.sendError(req.Context(), conn, "session full")
 		return
 	}
 
@@ -271,7 +327,7 @@ func (r *Relay) handleBrowserJoin(conn *websocket.Conn, req *http.Request, code 
 			r.replayStored(conn, req, code)
 			return
 		}
-		sendError(req.Context(), conn, "invalid code")
+		r.sendError(req.Context(), conn, "invalid code")
 		return
 	}
 	if s.stored {
@@ -281,7 +337,7 @@ func (r *Relay) handleBrowserJoin(conn *websocket.Conn, req *http.Request, code 
 	}
 	if s.receiver != nil {
 		r.mu.Unlock()
-		sendError(req.Context(), conn, "session full")
+		r.sendError(req.Context(), conn, "session full")
 		return
 	}
 
@@ -322,7 +378,7 @@ func (r *Relay) replayStored(conn *websocket.Conn, req *http.Request, code strin
 	dataPath := filepath.Join(r.cfg.StorageDir, code, "data")
 	f, err := os.Open(dataPath)
 	if err != nil {
-		sendError(req.Context(), conn, "transfer not found")
+		r.sendError(req.Context(), conn, "transfer not found")
 		return
 	}
 	defer f.Close()
@@ -338,12 +394,14 @@ func (r *Relay) replayStored(conn *websocket.Conn, req *http.Request, code strin
 			break
 		}
 
+		r.stats.bytesRelayed.Add(int64(payloadLen))
 		msg := protocol.Encode(protocol.Message{Type: protocol.MsgData, Payload: payload})
 		if err := conn.Write(req.Context(), websocket.MessageBinary, msg); err != nil {
 			return
 		}
 	}
 
+	r.stats.transfersCompleted.Add(1)
 	_ = conn.Close(websocket.StatusNormalClosure, "done")
 }
 
@@ -363,6 +421,9 @@ func (r *Relay) StartCleanup(ctx context.Context) {
 			return
 		case <-ticker.C:
 			r.cleanup()
+			if r.limiter != nil {
+				r.limiter.cleanup()
+			}
 		}
 	}
 }
@@ -428,7 +489,52 @@ func bridge(sender, receiver *websocket.Conn, done chan struct{}) {
 	wg.Wait()
 }
 
-func sendError(ctx context.Context, conn *websocket.Conn, text string) {
+func (r *Relay) HandleHealth(w http.ResponseWriter, req *http.Request) {
+	if _, err := os.Stat(r.cfg.StorageDir); err != nil {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusServiceUnavailable)
+		_, _ = w.Write([]byte(`{"status":"error"}`))
+		return
+	}
+	uptime := time.Since(r.startedAt).Truncate(time.Second).String()
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = fmt.Fprintf(w, `{"status":"ok","version":%q,"uptime":%q}`, r.cfg.Version, uptime)
+}
+
+func (r *Relay) HandleMetrics(w http.ResponseWriter, req *http.Request) {
+	r.mu.Lock()
+	activeSessions := len(r.sessions)
+	r.mu.Unlock()
+
+	var storedTransfers int
+	var storageUsed int64
+	entries, err := os.ReadDir(r.cfg.StorageDir)
+	if err == nil {
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			storedTransfers++
+			dataPath := filepath.Join(r.cfg.StorageDir, entry.Name(), "data")
+			if info, err := os.Stat(dataPath); err == nil {
+				storageUsed += info.Size()
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = fmt.Fprintf(w, `{"active_sessions":%d,"stored_transfers":%d,"transfers_completed":%d,"bytes_relayed":%d,"errors_total":%d,"storage_used_bytes":%d}`,
+		activeSessions,
+		storedTransfers,
+		r.stats.transfersCompleted.Load(),
+		r.stats.bytesRelayed.Load(),
+		r.stats.errorsTotal.Load(),
+		storageUsed,
+	)
+}
+
+func (r *Relay) sendError(ctx context.Context, conn *websocket.Conn, text string) {
+	r.stats.errorsTotal.Add(1)
 	msg := protocol.Encode(protocol.Message{Type: protocol.MsgError, Payload: []byte(text)})
 	if err := conn.Write(ctx, websocket.MessageBinary, msg); err != nil {
 		log.Printf("failed to send error: %v", err)

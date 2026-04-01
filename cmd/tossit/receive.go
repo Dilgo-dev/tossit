@@ -10,9 +10,9 @@ import (
 )
 
 func runReceive(args []string) {
-	relayURL, _, remaining := parseFlags(args)
+	relayURL, relayToken, _, remaining := parseFlags(args)
 	if len(remaining) == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: tossit receive [--relay URL] <code>")
+		fmt.Fprintln(os.Stderr, "Usage: tossit receive [--relay URL] [--relay-token TOKEN] <code>")
 		os.Exit(1)
 	}
 
@@ -26,9 +26,10 @@ func runReceive(args []string) {
 	defer cancel()
 
 	opts := transfer.ReceiveOptions{
-		RelayURL:  relayURL,
-		Code:      code,
-		OutputDir: outputDir,
+		RelayURL:   relayURL,
+		RelayToken: relayToken,
+		Code:       code,
+		OutputDir:  outputDir,
 	}
 
 	if err := transfer.Receive(ctx, opts); err != nil {

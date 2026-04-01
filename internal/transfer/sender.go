@@ -16,9 +16,10 @@ import (
 )
 
 type SendOptions struct {
-	RelayURL string
-	Paths    []string
-	Stream   bool
+	RelayURL   string
+	RelayToken string
+	Paths      []string
+	Stream     bool
 }
 
 func Send(ctx context.Context, opts SendOptions) error {
@@ -43,7 +44,16 @@ func Send(ctx context.Context, opts SendOptions) error {
 		size = info.Size()
 	}
 
-	conn, _, err := websocket.Dial(ctx, opts.RelayURL, nil)
+	dialURL := opts.RelayURL
+	if opts.RelayToken != "" {
+		sep := "?"
+		if strings.Contains(dialURL, "?") {
+			sep = "&"
+		}
+		dialURL += sep + "token=" + opts.RelayToken
+	}
+
+	conn, _, err := websocket.Dial(ctx, dialURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to connect to relay: %w", err)
 	}
@@ -65,6 +75,9 @@ func Send(ctx context.Context, opts SendOptions) error {
 	httpURL = strings.TrimSuffix(httpURL, "/ws")
 
 	browserURL := fmt.Sprintf("%s/d/%s", httpURL, code)
+	if opts.RelayToken != "" {
+		browserURL += "?token=" + opts.RelayToken
+	}
 
 	fmt.Println("Code:", code)
 	fmt.Printf("On another machine, run: tossit receive %s\n", code)

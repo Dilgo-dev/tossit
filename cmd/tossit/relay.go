@@ -14,9 +14,7 @@ import (
 	"github.com/Dilgo-dev/tossit/internal/relay"
 )
 
-var version = "dev"
-
-func main() {
+func runRelay(args []string) {
 	port := "8080"
 	storageDir := "./data"
 	expire := 24 * time.Hour
@@ -25,13 +23,12 @@ func main() {
 	authToken := os.Getenv("AUTH_TOKEN")
 	var allowIPs []string
 
-	for i := 1; i < len(os.Args); i++ {
-		switch os.Args[i] {
-		case "--version", "-v":
-			fmt.Println("tossit-relay", version)
-			return
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
 		case "--help", "-h":
-			fmt.Println("Usage: relay [options]")
+			fmt.Println("Usage: tossit relay [options]")
+			fmt.Println()
+			fmt.Println("Run a self-hosted relay server.")
 			fmt.Println()
 			fmt.Println("Options:")
 			fmt.Println("  --port <port>       Port to listen on (default: 8080)")
@@ -41,48 +38,47 @@ func main() {
 			fmt.Println("  --rate-limit <n>    Max connections per minute per IP (default: 20, 0=off)")
 			fmt.Println("  --auth-token <tok>  Require token for access (or set AUTH_TOKEN env)")
 			fmt.Println("  --allow-ips <list>  Comma-separated IP allowlist")
-			fmt.Println("  --version           Show version")
 			return
 		case "--port":
-			if i+1 < len(os.Args) {
+			if i+1 < len(args) {
 				i++
-				port = os.Args[i]
+				port = args[i]
 			}
 		case "--storage":
-			if i+1 < len(os.Args) {
+			if i+1 < len(args) {
 				i++
-				storageDir = os.Args[i]
+				storageDir = args[i]
 			}
 		case "--expire":
-			if i+1 < len(os.Args) {
+			if i+1 < len(args) {
 				i++
-				d, err := time.ParseDuration(os.Args[i])
+				d, err := time.ParseDuration(args[i])
 				if err == nil {
 					expire = d
 				}
 			}
 		case "--max-size":
-			if i+1 < len(os.Args) {
+			if i+1 < len(args) {
 				i++
-				maxSize = parseSize(os.Args[i])
+				maxSize = parseRelaySize(args[i])
 			}
 		case "--rate-limit":
-			if i+1 < len(os.Args) {
+			if i+1 < len(args) {
 				i++
-				n, err := strconv.Atoi(os.Args[i])
+				n, err := strconv.Atoi(args[i])
 				if err == nil {
 					rateLimit = n
 				}
 			}
 		case "--auth-token":
-			if i+1 < len(os.Args) {
+			if i+1 < len(args) {
 				i++
-				authToken = os.Args[i]
+				authToken = args[i]
 			}
 		case "--allow-ips":
-			if i+1 < len(os.Args) {
+			if i+1 < len(args) {
 				i++
-				for _, ip := range strings.Split(os.Args[i], ",") {
+				for _, ip := range strings.Split(args[i], ",") {
 					if trimmed := strings.TrimSpace(ip); trimmed != "" {
 						allowIPs = append(allowIPs, trimmed)
 					}
@@ -113,13 +109,13 @@ func main() {
 	http.HandleFunc("/metrics", r.HandleMetrics)
 
 	log.Printf("relay listening on :%s (storage: %s, expire: %s, max-size: %s)",
-		port, storageDir, expire, formatSize(maxSize))
+		port, storageDir, expire, formatRelaySize(maxSize))
 	if err := http.ListenAndServe(":"+port, nil); err != nil {
 		log.Fatal(err)
 	}
 }
 
-func parseSize(s string) int64 {
+func parseRelaySize(s string) int64 {
 	s = strings.ToUpper(strings.TrimSpace(s))
 	multiplier := int64(1)
 	if strings.HasSuffix(s, "GB") {
@@ -139,7 +135,7 @@ func parseSize(s string) int64 {
 	return n * multiplier
 }
 
-func formatSize(bytes int64) string {
+func formatRelaySize(bytes int64) string {
 	switch {
 	case bytes >= 1024*1024*1024:
 		return fmt.Sprintf("%dGB", bytes/(1024*1024*1024))

@@ -14,6 +14,9 @@ func (r *Relay) HandleWeb(w http.ResponseWriter, req *http.Request) {
 		http.NotFound(w, req)
 		return
 	}
+	if !r.checkAccess(w, req) {
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.Write(receiveHTML)
+	_, _ = w.Write(receiveHTML)
 }

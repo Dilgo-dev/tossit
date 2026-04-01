@@ -10,9 +10,9 @@ import (
 )
 
 func runSend(args []string) {
-	relayURL, stream, paths := parseFlags(args)
+	relayURL, relayToken, stream, paths := parseFlags(args)
 	if len(paths) == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: tossit send [--relay URL] [--stream] <file|dir> ...")
+		fmt.Fprintln(os.Stderr, "Usage: tossit send [--relay URL] [--relay-token TOKEN] [--stream] <file|dir> ...")
 		os.Exit(1)
 	}
 
@@ -27,9 +27,10 @@ func runSend(args []string) {
 	defer cancel()
 
 	opts := transfer.SendOptions{
-		RelayURL: relayURL,
-		Paths:    paths,
-		Stream:   stream,
+		RelayURL:   relayURL,
+		RelayToken: relayToken,
+		Paths:      paths,
+		Stream:     stream,
 	}
 
 	if err := transfer.Send(ctx, opts); err != nil {

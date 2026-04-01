@@ -133,7 +133,9 @@ body {
   }
 
   const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const wsURL = wsProto + '//' + location.host + '/ws';
+  let wsURL = wsProto + '//' + location.host + '/ws';
+  const urlToken = new URLSearchParams(location.search).get('token');
+  if (urlToken) wsURL += '?token=' + encodeURIComponent(urlToken);
 
   let ws;
   try {
