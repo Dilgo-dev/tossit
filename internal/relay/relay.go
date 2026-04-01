@@ -56,7 +56,7 @@ func New(cfg Config) *Relay {
 	if cfg.MaxSize == 0 {
 		cfg.MaxSize = 2 * 1024 * 1024 * 1024
 	}
-	_ = os.MkdirAll(cfg.StorageDir, 0o755)
+	_ = os.MkdirAll(cfg.StorageDir, 0o750)
 	return &Relay{sessions: make(map[string]*session), cfg: cfg}
 }
 
@@ -132,7 +132,7 @@ func (r *Relay) handleRegister(conn *websocket.Conn, req *http.Request, code str
 
 func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code string, s *session) {
 	dir := filepath.Join(r.cfg.StorageDir, code)
-	_ = os.MkdirAll(dir, 0o755)
+	_ = os.MkdirAll(dir, 0o750)
 
 	dataPath := filepath.Join(dir, "data")
 	f, err := os.Create(dataPath)
@@ -195,7 +195,7 @@ func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code
 		ExpiresAt: time.Now().Add(r.cfg.Expire),
 	}
 	metaJSON, _ := json.Marshal(meta)
-	_ = os.WriteFile(filepath.Join(dir, "meta.json"), metaJSON, 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "meta.json"), metaJSON, 0o600)
 
 	r.mu.Lock()
 	s.stored = true
