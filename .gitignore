@@ -1,2 +1,6 @@
 /tossit
 /relay
+/relay-linux
+web/node_modules/
+web/dist/
+internal/relay/web/dist/

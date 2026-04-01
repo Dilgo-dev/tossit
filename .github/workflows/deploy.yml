@@ -1,0 +1,23 @@
+name: Deploy Relay
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to ThunderVPS
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          script: |
+            curl -fsSL https://github.com/Dilgo-dev/tossit/releases/download/${{ github.event.release.tag_name }}/relay-linux-amd64 -o /tmp/tossit-relay
+            chmod +x /tmp/tossit-relay
+            sudo systemctl stop tossit-relay
+            sudo cp /tmp/tossit-relay /usr/local/bin/tossit-relay
+            sudo systemctl start tossit-relay
+            rm /tmp/tossit-relay

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/Dilgo-dev/tossit/internal/crypto"
 	"github.com/Dilgo-dev/tossit/internal/progress"
@@ -14,13 +15,23 @@ import (
 )
 
 type ReceiveOptions struct {
-	RelayURL  string
-	Code      string
-	OutputDir string
+	RelayURL   string
+	RelayToken string
+	Code       string
+	OutputDir  string
 }
 
 func Receive(ctx context.Context, opts ReceiveOptions) error {
-	conn, _, err := websocket.Dial(ctx, opts.RelayURL, nil)
+	dialURL := opts.RelayURL
+	if opts.RelayToken != "" {
+		sep := "?"
+		if strings.Contains(dialURL, "?") {
+			sep = "&"
+		}
+		dialURL += sep + "token=" + opts.RelayToken
+	}
+
+	conn, _, err := websocket.Dial(ctx, dialURL, nil)
 	if err != nil {
 		return fmt.Errorf("failed to connect to relay: %w", err)
 	}

@@ -1,0 +1,9 @@
+{
+  "port": "8080",
+  "storage": "./data",
+  "expire": "24h",
+  "max_size": "2GB",
+  "rate_limit": 20,
+  "auth_token": "",
+  "allow_ips": []
+}
