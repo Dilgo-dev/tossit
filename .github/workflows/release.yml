@@ -33,6 +33,13 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.25'
+      - uses: oven-sh/setup-bun@v2
+      - name: Build web UI
+        run: |
+          cd web && bun install && bun run build
+          cd ..
+          rm -rf internal/relay/web/dist
+          cp -r web/dist internal/relay/web/dist
       - name: Build CLI
         run: |
           CGO_ENABLED=0 GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build \
