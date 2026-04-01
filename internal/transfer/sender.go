@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/Dilgo-dev/tossit/internal/crypto"
 	"github.com/Dilgo-dev/tossit/internal/progress"
@@ -16,6 +17,7 @@ import (
 type SendOptions struct {
 	RelayURL string
 	Paths    []string
+	Stream   bool
 }
 
 func Send(ctx context.Context, opts SendOptions) error {
@@ -49,32 +51,53 @@ func Send(ctx context.Context, opts SendOptions) error {
 	defer pc.Close()
 
 	code := protocol.GenerateCode()
-	if err := pc.SendRaw(protocol.Message{Type: protocol.MsgRegister, Payload: []byte(code)}); err != nil {
+	regPayload := append([]byte{0x00}, []byte(code)...)
+	if opts.Stream {
+		regPayload[0] = 0x01
+	}
+	if err := pc.SendRaw(protocol.Message{Type: protocol.MsgRegister, Payload: regPayload}); err != nil {
 		return err
 	}
+
+	httpURL := strings.Replace(opts.RelayURL, "wss://", "https://", 1)
+	httpURL = strings.Replace(httpURL, "ws://", "http://", 1)
+	httpURL = strings.TrimSuffix(httpURL, "/ws")
 
 	fmt.Println("Code:", code)
 	fmt.Printf("On another machine, run: tossit receive %s\n", code)
-	fmt.Println("Waiting for receiver...")
+	fmt.Printf("Or open in browser: %s/d/%s\n", httpURL, code)
 
-	msg, err := pc.RecvRaw()
-	if err != nil {
-		return err
-	}
-	if msg.Type == protocol.MsgError {
-		return fmt.Errorf("relay: %s", msg.Payload)
-	}
-	if msg.Type != protocol.MsgReady {
-		return fmt.Errorf("unexpected message from relay: %d", msg.Type)
-	}
+	var key []byte
 
-	fmt.Println("Receiver connected. Establishing secure channel...")
+	if opts.Stream {
+		fmt.Println("Waiting for receiver...")
 
-	key, err := crypto.SenderKeyExchange(pc.SendPeer, func() ([]byte, error) {
-		return pc.RecvPeer()
-	}, code)
-	if err != nil {
-		return fmt.Errorf("key exchange failed: %w", err)
+		msg, err := pc.RecvRaw()
+		if err != nil {
+			return err
+		}
+		if msg.Type == protocol.MsgError {
+			return fmt.Errorf("relay: %s", msg.Payload)
+		}
+
+		switch msg.Type {
+		case protocol.MsgReady:
+			fmt.Println("Receiver connected. Establishing secure channel...")
+			key, err = crypto.SenderKeyExchange(pc.SendPeer, func() ([]byte, error) {
+				return pc.RecvPeer()
+			}, code)
+			if err != nil {
+				return fmt.Errorf("key exchange failed: %w", err)
+			}
+		case protocol.MsgBrowserJoin:
+			fmt.Println("Browser receiver connected. Establishing secure channel...")
+			key = crypto.DeriveKeyFromCode(code)
+		default:
+			return fmt.Errorf("unexpected message from relay: %d", msg.Type)
+		}
+	} else {
+		fmt.Println("Uploading...")
+		key = crypto.DeriveKeyFromCode(code)
 	}
 
 	meta := protocol.Metadata{
@@ -102,9 +125,28 @@ func Send(ctx context.Context, opts SendOptions) error {
 	}
 
 	if isMulti {
-		return sendArchive(ctx, pc, enc, opts.Paths)
+		if err := sendArchive(ctx, pc, enc, opts.Paths); err != nil {
+			return err
+		}
+	} else {
+		if err := sendFile(ctx, pc, enc, opts.Paths[0], size); err != nil {
+			return err
+		}
 	}
-	return sendFile(ctx, pc, enc, opts.Paths[0], size)
+
+	if !opts.Stream {
+		msg, err := pc.RecvRaw()
+		if err != nil {
+			return err
+		}
+		if msg.Type == protocol.MsgStored {
+			fmt.Println("Upload complete! File available for download.")
+		} else if msg.Type == protocol.MsgError {
+			return fmt.Errorf("relay: %s", msg.Payload)
+		}
+	}
+
+	return nil
 }
 
 func sendFile(ctx context.Context, pc *PeerConn, enc *crypto.Encryptor, path string, size int64) error {
@@ -153,10 +195,5 @@ func sendFile(ctx context.Context, pc *PeerConn, enc *crypto.Encryptor, path str
 	bar.Done()
 
 	done := protocol.EncodeDone(hasher.Sum(nil))
-	if err := pc.SendPeer(done); err != nil {
-		return err
-	}
-
-	fmt.Printf("Sent %s (%s)\n", path, progress.FormatSize(size))
-	return nil
+	return pc.SendPeer(done)
 }

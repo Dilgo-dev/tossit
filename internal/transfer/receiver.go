@@ -32,13 +32,34 @@ func Receive(ctx context.Context, opts ReceiveOptions) error {
 		return err
 	}
 
-	fmt.Println("Establishing secure channel...")
-
-	key, err := crypto.ReceiverKeyExchange(pc.SendPeer, func() ([]byte, error) {
-		return pc.RecvPeer()
-	}, opts.Code)
+	msg, err := pc.RecvRaw()
 	if err != nil {
-		return fmt.Errorf("key exchange failed: %w", err)
+		return err
+	}
+	if msg.Type == protocol.MsgError {
+		return fmt.Errorf("relay: %s", msg.Payload)
+	}
+
+	var key []byte
+	switch msg.Type {
+	case protocol.MsgStored:
+		fmt.Println("Downloading stored transfer...")
+		key = crypto.DeriveKeyFromCode(opts.Code)
+	case protocol.MsgData:
+		fmt.Println("Establishing secure channel...")
+		first := true
+		key, err = crypto.ReceiverKeyExchange(pc.SendPeer, func() ([]byte, error) {
+			if first {
+				first = false
+				return msg.Payload, nil
+			}
+			return pc.RecvPeer()
+		}, opts.Code)
+		if err != nil {
+			return fmt.Errorf("key exchange failed: %w", err)
+		}
+	default:
+		return fmt.Errorf("unexpected message from relay: %d", msg.Type)
 	}
 
 	payload, err := pc.RecvPeer()

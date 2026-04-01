@@ -32,11 +32,12 @@ func main() {
 func printHelp() {
 	fmt.Printf("tossit %s - file transfer tool\n\n", version)
 	fmt.Println("Usage:")
-	fmt.Println("  tossit send <file|dir> ...    Send files")
-	fmt.Println("  tossit receive <code>         Receive files")
+	fmt.Println("  tossit send <file|dir> ...    Upload and share files")
+	fmt.Println("  tossit receive <code>         Download files")
 	fmt.Println()
 	fmt.Println("Options:")
 	fmt.Println("  --relay <url>    Relay server URL (default: wss://relay.tossit.dev/ws)")
+	fmt.Println("  --stream         Real-time streaming (both sides must be online)")
 	fmt.Println("  --version        Show version")
 	fmt.Println("  --help           Show this help")
 }

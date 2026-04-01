@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>tossit - receive file</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: #0a0a0a;
+  color: #e0e0e0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 20px;
+}
+.card {
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 12px;
+  padding: 40px;
+  max-width: 480px;
+  width: 100%;
+  text-align: center;
+}
+.logo {
+  font-size: 28px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  color: #fff;
+}
+.subtitle {
+  color: #888;
+  font-size: 14px;
+  margin-bottom: 32px;
+}
+.status {
+  font-size: 16px;
+  margin-bottom: 20px;
+  min-height: 24px;
+}
+.filename {
+  font-family: monospace;
+  background: #111;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 12px 16px;
+  margin-bottom: 20px;
+  font-size: 14px;
+  word-break: break-all;
+  display: none;
+}
+.progress-wrap {
+  background: #111;
+  border-radius: 8px;
+  height: 8px;
+  margin-bottom: 12px;
+  overflow: hidden;
+  display: none;
+}
+.progress-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #6366f1, #818cf8);
+  border-radius: 8px;
+  transition: width 0.15s;
+}
+.progress-text {
+  font-size: 13px;
+  color: #888;
+  margin-bottom: 24px;
+  display: none;
+}
+.download-link {
+  display: none;
+  background: #6366f1;
+  color: #fff;
+  text-decoration: none;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-size: 15px;
+  font-weight: 500;
+  transition: background 0.2s;
+}
+.download-link:hover { background: #4f46e5; }
+.error {
+  color: #ef4444;
+  font-size: 14px;
+  margin-top: 16px;
+  display: none;
+}
+.encrypted {
+  color: #555;
+  font-size: 12px;
+  margin-top: 24px;
+}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">tossit</div>
+  <div class="subtitle">end-to-end encrypted file transfer</div>
+  <div class="status" id="status">Connecting...</div>
+  <div class="filename" id="filename"></div>
+  <div class="progress-wrap" id="progressWrap">
+    <div class="progress-bar" id="progressBar"></div>
+  </div>
+  <div class="progress-text" id="progressText"></div>
+  <a class="download-link" id="downloadLink">Download</a>
+  <div class="error" id="error"></div>
+  <div class="encrypted">Files are end-to-end encrypted. The relay never sees your data.</div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/hash-wasm@4/dist/argon2.umd.min.js"></script>
+<script>
+(async function() {
+  const $ = id => document.getElementById(id);
+  const status = $('status');
+  const filenameEl = $('filename');
+  const progressWrap = $('progressWrap');
+  const progressBar = $('progressBar');
+  const progressText = $('progressText');
+  const downloadLink = $('downloadLink');
+  const errorEl = $('error');
+
+  const path = window.location.pathname;
+  const code = path.split('/d/')[1];
+  if (!code || !/^[a-z]+-[a-z]+-\d{2}$/.test(code)) {
+    showError('Invalid transfer code.');
+    return;
+  }
+
+  const wsProto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const wsURL = wsProto + '//' + location.host + '/ws';
+
+  let ws;
+  try {
+    ws = new WebSocket(wsURL);
+    ws.binaryType = 'arraybuffer';
+  } catch (e) {
+    showError('Failed to connect.');
+    return;
+  }
+
+  ws.onerror = () => showError('Connection error.');
+
+  ws.onclose = (e) => {
+    if (!done) showError('Connection closed unexpectedly.');
+  };
+
+  let cryptoKey = null;
+  let chunks = [];
+  let totalSize = 0;
+  let received = 0;
+  let fileName = 'download';
+  let done = false;
+  let startTime = Date.now();
+
+  ws.onopen = async () => {
+    status.textContent = 'Deriving encryption key...';
+
+    const msg = new Uint8Array(1 + code.length);
+    msg[0] = 0x07;
+    for (let i = 0; i < code.length; i++) msg[i + 1] = code.charCodeAt(i);
+    ws.send(msg.buffer);
+
+    try {
+      const salt = new TextEncoder().encode('tossit-v1-key-derivation');
+      const keyBytes = await hashwasm.argon2id({
+        password: code,
+        salt: salt,
+        iterations: 1,
+        memorySize: 65536,
+        parallelism: 4,
+        hashLength: 32,
+        outputType: 'binary'
+      });
+
+      cryptoKey = await crypto.subtle.importKey(
+        'raw', keyBytes, { name: 'AES-GCM' }, false, ['decrypt']
+      );
+
+      status.textContent = 'Waiting for sender...';
+    } catch (e) {
+      showError('Key derivation failed: ' + e.message);
+    }
+  };
+
+  ws.onmessage = async (event) => {
+    const data = new Uint8Array(event.data);
+    if (data.length < 2) return;
+
+    if (data[0] === 0x05) {
+      showError(new TextDecoder().decode(data.slice(1)));
+      return;
+    }
+
+    if (data[0] !== 0x04) return;
+    const payload = data.slice(1);
+    if (payload.length === 0) return;
+
+    const peerType = payload[0];
+
+    if (peerType === 0x10) {
+      const json = new TextDecoder().decode(payload.slice(1));
+      const meta = JSON.parse(json);
+      fileName = meta.name;
+      totalSize = meta.size;
+      startTime = Date.now();
+
+      filenameEl.textContent = fileName + (totalSize > 0 ? ' (' + formatSize(totalSize) + ')' : '');
+      filenameEl.style.display = 'block';
+      progressWrap.style.display = 'block';
+      progressText.style.display = 'block';
+      status.textContent = 'Receiving...';
+      return;
+    }
+
+    if (peerType === 0x11) {
+      if (!cryptoKey) return;
+      const seq = new DataView(payload.buffer, payload.byteOffset + 1, 4).getUint32(0);
+      const ciphertext = payload.slice(5);
+
+      const nonce = new Uint8Array(12);
+      new DataView(nonce.buffer).setUint32(8, seq);
+
+      try {
+        const plaintext = await crypto.subtle.decrypt(
+          { name: 'AES-GCM', iv: nonce },
+          cryptoKey,
+          ciphertext
+        );
+        chunks.push(new Uint8Array(plaintext));
+        received += plaintext.byteLength;
+
+        const pct = totalSize > 0 ? (received / totalSize) * 100 : 0;
+        progressBar.style.width = pct + '%';
+
+        const elapsed = (Date.now() - startTime) / 1000;
+        const speed = elapsed > 0 ? received / elapsed : 0;
+        progressText.textContent = formatSize(received) + ' / ' + formatSize(totalSize) + ' - ' + formatSize(speed) + '/s';
+      } catch (e) {
+        showError('Decryption failed. Wrong code or corrupted data.');
+      }
+      return;
+    }
+
+    if (peerType === 0x12) {
+      done = true;
+      const expectedHash = payload.slice(1);
+
+      status.textContent = 'Verifying...';
+
+      const allData = new Uint8Array(received);
+      let offset = 0;
+      for (const chunk of chunks) {
+        allData.set(chunk, offset);
+        offset += chunk.length;
+      }
+
+      const actualHash = new Uint8Array(await crypto.subtle.digest('SHA-256', allData));
+
+      if (!hashEqual(expectedHash, actualHash)) {
+        showError('File hash mismatch - transfer may be corrupted.');
+        return;
+      }
+
+      const blob = new Blob([allData]);
+      const url = URL.createObjectURL(blob);
+
+      downloadLink.href = url;
+      downloadLink.download = fileName;
+      downloadLink.style.display = 'inline-block';
+
+      progressBar.style.width = '100%';
+      status.textContent = 'Transfer complete!';
+      progressText.textContent = formatSize(received) + ' - verified';
+
+      downloadLink.click();
+      ws.close();
+    }
+  };
+
+  function hashEqual(a, b) {
+    if (a.length !== b.length) return false;
+    let diff = 0;
+    for (let i = 0; i < a.length; i++) diff |= a[i] ^ b[i];
+    return diff === 0;
+  }
+
+  function formatSize(bytes) {
+    if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(1) + ' GB';
+    if (bytes >= 1048576) return (bytes / 1048576).toFixed(1) + ' MB';
+    if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+    return bytes + ' B';
+  }
+
+  function showError(msg) {
+    errorEl.textContent = msg;
+    errorEl.style.display = 'block';
+    status.textContent = 'Error';
+  }
+})();
+</script>
+</body>
+</html>

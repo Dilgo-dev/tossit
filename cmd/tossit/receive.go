@@ -10,7 +10,7 @@ import (
 )
 
 func runReceive(args []string) {
-	relayURL, remaining := parseFlags(args)
+	relayURL, _, remaining := parseFlags(args)
 	if len(remaining) == 0 {
 		fmt.Fprintln(os.Stderr, "Usage: tossit receive [--relay URL] <code>")
 		os.Exit(1)

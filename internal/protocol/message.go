@@ -8,12 +8,14 @@ import (
 )
 
 const (
-	MsgRegister byte = 0x01
-	MsgJoin     byte = 0x02
-	MsgReady    byte = 0x03
-	MsgData     byte = 0x04
-	MsgError    byte = 0x05
-	MsgClose    byte = 0x06
+	MsgRegister    byte = 0x01
+	MsgJoin        byte = 0x02
+	MsgReady       byte = 0x03
+	MsgData        byte = 0x04
+	MsgError       byte = 0x05
+	MsgClose       byte = 0x06
+	MsgBrowserJoin byte = 0x07
+	MsgStored      byte = 0x08
 
 	PeerMetadata  byte = 0x10
 	PeerChunk     byte = 0x11

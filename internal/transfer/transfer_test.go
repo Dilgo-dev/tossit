@@ -15,7 +15,7 @@ import (
 )
 
 func TestSendReceiveFile(t *testing.T) {
-	r := relay.New()
+	r := relay.New(relay.Config{StorageDir: t.TempDir()})
 	srv := &http.Server{Addr: ":0"}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", r.HandleConn)
