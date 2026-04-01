@@ -1,0 +1,26 @@
+version: "2"
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - ineffassign
+    - gocritic
+    - revive
+    - misspell
+    - unconvert
+    - unparam
+    - gosec
+  settings:
+    revive:
+      rules:
+        - name: exported
+          disabled: true
+    gocritic:
+      disabled-checks:
+        - exitAfterDefer
+
+run:
+  timeout: 2m

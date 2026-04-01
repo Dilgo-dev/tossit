@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+
+	"github.com/Dilgo-dev/tossit/internal/update"
 )
 
 var version = "dev"
@@ -18,6 +20,11 @@ func main() {
 		runSend(os.Args[2:])
 	case "receive", "recv", "r":
 		runReceive(os.Args[2:])
+	case "update":
+		if err := update.Run(version); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+			os.Exit(1)
+		}
 	case "--version", "-v":
 		fmt.Println("tossit", version)
 	case "--help", "-h", "help":
@@ -34,6 +41,7 @@ func printHelp() {
 	fmt.Println("Usage:")
 	fmt.Println("  tossit send <file|dir> ...    Upload and share files")
 	fmt.Println("  tossit receive <code>         Download files")
+	fmt.Println("  tossit update                Check for updates")
 	fmt.Println()
 	fmt.Println("Options:")
 	fmt.Println("  --relay <url>    Relay server URL (default: wss://relay.tossit.dev/ws)")
