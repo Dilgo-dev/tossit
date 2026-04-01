@@ -157,9 +157,8 @@ func runRelay(args []string) {
 	http.Handle("/", r.WebHandler())
 
 	addr := ":" + port
-	log.Printf("relay listening on %s (storage: %s, expire: %s, max-size: %s)",
-		addr, storageDir, expire, relay.FormatSize(maxSize))
-	srv := &http.Server{Addr: addr}
+	log.Println("relay listening on " + addr + " (storage: " + storageDir + ", expire: " + expire.String() + ", max-size: " + relay.FormatSize(maxSize) + ")")
+	srv := &http.Server{Addr: addr, ReadHeaderTimeout: 10 * time.Second}
 	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}

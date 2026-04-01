@@ -160,9 +160,10 @@ func main() {
 	http.HandleFunc("/api/config", r.HandleConfig)
 	http.Handle("/", r.WebHandler())
 
-	log.Printf("relay listening on :%s (storage: %s, expire: %s, max-size: %s)",
-		port, storageDir, expire, relay.FormatSize(maxSize))
-	if err := http.ListenAndServe(":"+port, nil); err != nil {
+	addr := ":" + port
+	log.Println("relay listening on " + addr + " (storage: " + storageDir + ", expire: " + expire.String() + ", max-size: " + relay.FormatSize(maxSize) + ")")
+	srv := &http.Server{Addr: addr, ReadHeaderTimeout: 10 * time.Second}
+	if err := srv.ListenAndServe(); err != nil {
 		log.Fatal(err)
 	}
 }
