@@ -18,6 +18,13 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
 
+      - name: Build web UI
+        run: |
+          cd web && bun install && bun run build
+          cd ..
+          rm -rf internal/relay/web/dist
+          cp -r web/dist internal/relay/web/dist
+
       - name: Format check
         run: test -z "$(gofmt -l .)"
 
@@ -26,13 +33,6 @@ jobs:
         with:
           version: v2.11.4
           only-new-issues: true
-
-      - name: Build web UI
-        run: |
-          cd web && bun install && bun run build
-          cd ..
-          rm -rf internal/relay/web/dist
-          cp -r web/dist internal/relay/web/dist
 
       - name: Build CLI
         run: CGO_ENABLED=0 go build ./cmd/tossit
