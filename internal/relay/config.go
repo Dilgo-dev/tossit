@@ -17,7 +17,7 @@ type FileConfig struct {
 	AuthToken     string   `json:"auth_token"`
 	AllowIPs      []string `json:"allow_ips"`
 	UIEnabled     *bool    `json:"ui"`
-	UIPassword    string   `json:"ui_password"`
+	UIPassword    *string  `json:"ui_password"`
 	AdminPassword string   `json:"admin_password"`
 }
 

@@ -29,6 +29,7 @@ type Config struct {
 	AllowIPs      []string
 	UIEnabled     bool
 	UIPassword    string
+	UIPasswordSet bool
 	AdminPassword string
 }
 
@@ -76,7 +77,7 @@ func New(cfg Config) *Relay {
 		cfg.AdminPassword = generatePassword()
 		log.Printf("admin password: %s", cfg.AdminPassword)
 	}
-	if cfg.UIPassword == "" && cfg.AdminPassword != "off" {
+	if !cfg.UIPasswordSet && cfg.AdminPassword != "off" {
 		cfg.UIPassword = cfg.AdminPassword
 	}
 	_ = os.MkdirAll(cfg.StorageDir, 0o750)
