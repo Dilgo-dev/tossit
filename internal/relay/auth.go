@@ -81,6 +81,7 @@ func (r *Relay) HandleLogin(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	req.Body = http.MaxBytesReader(w, req.Body, 4096)
 	password := req.FormValue("password")
 	if password != r.cfg.UIPassword {
 		r.serveLoginPage(w, "Invalid password", false)
@@ -106,6 +107,7 @@ func (r *Relay) HandleAdminLogin(w http.ResponseWriter, req *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	req.Body = http.MaxBytesReader(w, req.Body, 4096)
 	password := req.FormValue("password")
 	if password != r.cfg.AdminPassword {
 		r.serveLoginPage(w, "Invalid password", true)
