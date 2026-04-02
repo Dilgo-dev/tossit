@@ -12,6 +12,16 @@ import (
 var webDist embed.FS
 
 func (r *Relay) WebHandler() http.Handler {
+	if !r.cfg.UIEnabled {
+		return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			if strings.HasPrefix(req.URL.Path, "/d/") {
+				http.NotFound(w, req)
+				return
+			}
+			http.NotFound(w, req)
+		})
+	}
+
 	dist, err := fs.Sub(webDist, "web/dist")
 	if err != nil {
 		panic(err)
@@ -19,7 +29,6 @@ func (r *Relay) WebHandler() http.Handler {
 	fileServer := http.FileServer(http.FS(dist))
 
 	return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
-		// /d/<code> redirects to SPA receive route
 		if strings.HasPrefix(req.URL.Path, "/d/") {
 			code := strings.TrimPrefix(req.URL.Path, "/d/")
 			target := "/#/receive/" + code
@@ -34,7 +43,10 @@ func (r *Relay) WebHandler() http.Handler {
 			return
 		}
 
-		// Try serving static file first
+		if !r.checkUIPassword(w, req) {
+			return
+		}
+
 		path := req.URL.Path
 		if path == "/" {
 			path = "/index.html"
@@ -44,7 +56,6 @@ func (r *Relay) WebHandler() http.Handler {
 			return
 		}
 
-		// SPA fallback: serve index.html for unknown routes
 		req.URL.Path = "/"
 		fileServer.ServeHTTP(w, req)
 	})
@@ -52,6 +63,9 @@ func (r *Relay) WebHandler() http.Handler {
 
 func (r *Relay) HandleConfig(w http.ResponseWriter, req *http.Request) {
 	if !r.checkAccess(w, req) {
+		return
+	}
+	if !r.checkAdminPassword(w, req) {
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")

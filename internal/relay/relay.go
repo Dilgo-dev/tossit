@@ -19,14 +19,17 @@ import (
 )
 
 type Config struct {
-	Port       string
-	StorageDir string
-	Expire     time.Duration
-	MaxSize    int64
-	Version    string
-	RateLimit  int
-	AuthToken  string
-	AllowIPs   []string
+	Port          string
+	StorageDir    string
+	Expire        time.Duration
+	MaxSize       int64
+	Version       string
+	RateLimit     int
+	AuthToken     string
+	AllowIPs      []string
+	UIEnabled     bool
+	UIPassword    string
+	AdminPassword string
 }
 
 type session struct {
@@ -68,6 +71,13 @@ func New(cfg Config) *Relay {
 	}
 	if cfg.MaxSize == 0 {
 		cfg.MaxSize = 2 * 1024 * 1024 * 1024
+	}
+	if cfg.AdminPassword == "" {
+		cfg.AdminPassword = generatePassword()
+		log.Printf("admin password: %s", cfg.AdminPassword)
+	}
+	if cfg.UIPassword == "" && cfg.AdminPassword != "off" {
+		cfg.UIPassword = cfg.AdminPassword
 	}
 	_ = os.MkdirAll(cfg.StorageDir, 0o750)
 	r := &Relay{
@@ -503,6 +513,9 @@ func (r *Relay) HandleHealth(w http.ResponseWriter, req *http.Request) {
 }
 
 func (r *Relay) HandleMetrics(w http.ResponseWriter, req *http.Request) {
+	if !r.checkAdminPassword(w, req) {
+		return
+	}
 	r.mu.Lock()
 	activeSessions := len(r.sessions)
 	r.mu.Unlock()
