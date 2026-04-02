@@ -16,9 +16,9 @@ type FileConfig struct {
 	RateLimit     *int     `json:"rate_limit"`
 	AuthToken     string   `json:"auth_token"`
 	AllowIPs      []string `json:"allow_ips"`
-	UIEnabled     *bool    `json:"ui"`
-	UIPassword    string   `json:"ui_password"`
-	AdminPassword string   `json:"admin_password"`
+	UIEnabled     *bool   `json:"ui"`
+	UIPassword    *string `json:"ui_password"`
+	AdminPassword string  `json:"admin_password"`
 }
 
 func LoadConfig(path string) (FileConfig, error) {

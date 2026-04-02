@@ -158,8 +158,9 @@ func runRelay(args []string) {
 		if fc.UIEnabled != nil && !flagSet["ui"] {
 			uiEnabled = *fc.UIEnabled
 		}
-		if fc.UIPassword != "" && !flagSet["ui-password"] {
-			uiPassword = fc.UIPassword
+		if fc.UIPassword != nil && !flagSet["ui-password"] {
+			uiPassword = *fc.UIPassword
+			flagSet["ui-password"] = true
 		}
 		if fc.AdminPassword != "" && !flagSet["admin-password"] {
 			adminPassword = fc.AdminPassword
@@ -177,6 +178,7 @@ func runRelay(args []string) {
 		AllowIPs:      allowIPs,
 		UIEnabled:     uiEnabled,
 		UIPassword:    uiPassword,
+		UIPasswordSet: flagSet["ui-password"],
 		AdminPassword: adminPassword,
 	}
 
