@@ -35,6 +35,14 @@ func (b *Bar) render() {
 		elapsed = 0.1
 	}
 
+	if b.total <= 0 {
+		fmt.Printf("\r  %s %s  ",
+			color.Bold(FormatSize(b.current)),
+			color.Cyan(formatSpeed(float64(b.current)/elapsed)),
+		)
+		return
+	}
+
 	pct := float64(b.current) / float64(b.total)
 	if pct > 1 {
 		pct = 1
