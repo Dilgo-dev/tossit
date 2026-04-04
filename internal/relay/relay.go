@@ -1,6 +1,7 @@
 package relay
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -153,8 +155,18 @@ func (r *Relay) HandleConn(w http.ResponseWriter, req *http.Request) {
 			return
 		}
 		mode := msg.Payload[0]
-		code := string(msg.Payload[1:])
-		r.handleRegister(conn, req, code, mode == 0x01)
+		rest := msg.Payload[1:]
+		var code string
+		var requestedExpire time.Duration
+		if idx := bytes.IndexByte(rest, 0x00); idx >= 0 {
+			code = string(rest[:idx])
+			if secs, err := strconv.Atoi(string(rest[idx+1:])); err == nil && secs > 0 {
+				requestedExpire = time.Duration(secs) * time.Second
+			}
+		} else {
+			code = string(rest)
+		}
+		r.handleRegister(conn, req, code, mode == 0x01, requestedExpire)
 	case protocol.MsgJoin:
 		r.handleJoin(conn, req, string(msg.Payload))
 	case protocol.MsgBrowserJoin:
@@ -164,7 +176,7 @@ func (r *Relay) HandleConn(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (r *Relay) handleRegister(conn *websocket.Conn, req *http.Request, code string, streamMode bool) {
+func (r *Relay) handleRegister(conn *websocket.Conn, req *http.Request, code string, streamMode bool, requestedExpire time.Duration) {
 	r.mu.Lock()
 	if _, exists := r.sessions[code]; exists {
 		r.mu.Unlock()
@@ -191,11 +203,11 @@ func (r *Relay) handleRegister(conn *websocket.Conn, req *http.Request, code str
 		case <-req.Context().Done():
 		}
 	} else {
-		r.handleStoreForward(conn, req, code, s)
+		r.handleStoreForward(conn, req, code, s, requestedExpire)
 	}
 }
 
-func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code string, s *session) {
+func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code string, s *session, requestedExpire time.Duration) {
 	dir := filepath.Join(r.cfg.StorageDir, code)
 	_ = os.MkdirAll(dir, 0o750)
 
@@ -257,9 +269,13 @@ func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code
 		}
 	}
 
+	expire := r.cfg.Expire
+	if requestedExpire > 0 && requestedExpire < expire {
+		expire = requestedExpire
+	}
 	meta := transferMeta{
 		CreatedAt: time.Now(),
-		ExpiresAt: time.Now().Add(r.cfg.Expire),
+		ExpiresAt: time.Now().Add(expire),
 	}
 	metaJSON, _ := json.Marshal(meta)
 	_ = os.WriteFile(filepath.Join(dir, "meta.json"), metaJSON, 0o600)

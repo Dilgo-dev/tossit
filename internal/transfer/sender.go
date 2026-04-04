@@ -26,6 +26,7 @@ type SendOptions struct {
 	Stream     bool
 	Stdin      io.Reader
 	Password   string
+	Expires    time.Duration
 }
 
 func Send(ctx context.Context, opts SendOptions) error {
@@ -81,6 +82,10 @@ func Send(ctx context.Context, opts SendOptions) error {
 	if opts.Stream {
 		regPayload[0] = 0x01
 	}
+	if opts.Expires > 0 {
+		regPayload = append(regPayload, 0x00)
+		regPayload = append(regPayload, []byte(fmt.Sprintf("%d", int(opts.Expires.Seconds())))...)
+	}
 	if err := pc.SendRaw(protocol.Message{Type: protocol.MsgRegister, Payload: regPayload}); err != nil {
 		return err
 	}
@@ -100,6 +105,9 @@ func Send(ctx context.Context, opts SendOptions) error {
 		fmt.Printf("%s %s\n", color.Dim("Password protected:"), color.Yellow("receiver must use the same --password"))
 	} else {
 		fmt.Printf("%s tossit receive %s\n", color.Dim("On another machine, run:"), color.BoldCyan(code))
+	}
+	if opts.Expires > 0 {
+		fmt.Printf("%s %s\n", color.Dim("Expires in:"), color.Yellow(opts.Expires.String()))
 	}
 	fmt.Printf("%s %s\n", color.Dim("Or open in browser:"), color.Cyan(browserURL))
 	qr.Print(browserURL)

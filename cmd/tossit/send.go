@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"time"
 
 	"github.com/Dilgo-dev/tossit/internal/color"
 	"github.com/Dilgo-dev/tossit/internal/transfer"
 )
 
 func runSend(args []string) {
-	relayURL, relayToken, stream, _, password, paths := parseFlags(args)
+	relayURL, relayToken, stream, _, password, expires, paths := parseFlags(args)
 
 	piped := stdinIsPipe()
 	if len(paths) == 0 && !piped {
@@ -30,12 +31,23 @@ func runSend(args []string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
+	var expireDuration time.Duration
+	if expires != "" {
+		d, err := time.ParseDuration(expires)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s invalid --expires duration: %s\n", color.BoldRed("Error:"), err)
+			os.Exit(1)
+		}
+		expireDuration = d
+	}
+
 	opts := transfer.SendOptions{
 		RelayURL:   relayURL,
 		RelayToken: relayToken,
 		Paths:      paths,
 		Stream:     stream,
 		Password:   password,
+		Expires:    expireDuration,
 	}
 
 	if piped && len(paths) == 0 {

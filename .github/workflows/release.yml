@@ -72,3 +72,127 @@ jobs:
             tossit-*
             relay-*
             checksums.txt
+
+  update-packages:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get checksums
+        run: |
+          curl -fsSL "https://github.com/Dilgo-dev/tossit/releases/download/${{ github.ref_name }}/checksums.txt" -o checksums.txt
+          echo "VERSION=${GITHUB_REF_NAME#v}" >> $GITHUB_ENV
+
+      - name: Update Homebrew tap
+        run: |
+          SHA_DARWIN_AMD64=$(grep tossit-darwin-amd64 checksums.txt | awk '{print $1}')
+          SHA_DARWIN_ARM64=$(grep tossit-darwin-arm64 checksums.txt | awk '{print $1}')
+          SHA_LINUX_AMD64=$(grep tossit-linux-amd64 checksums.txt | awk '{print $1}')
+          SHA_LINUX_ARM64=$(grep tossit-linux-arm64 checksums.txt | awk '{print $1}')
+
+          git clone https://x-access-token:${{ secrets.PKG_TOKEN }}@github.com/Overcop/homebrew-tap.git
+          cd homebrew-tap
+
+          cat > Formula/tossit.rb << 'FORMULA'
+          class Tossit < Formula
+            desc "File transfer tool. Send from CLI, receive anywhere."
+            homepage "https://tossit.dev"
+            version "VERSION_PLACEHOLDER"
+            license "MIT"
+
+            on_macos do
+              on_intel do
+                url "https://github.com/Dilgo-dev/tossit/releases/download/vVERSION_PLACEHOLDER/tossit-darwin-amd64"
+                sha256 "SHA_DARWIN_AMD64_PLACEHOLDER"
+              end
+              on_arm do
+                url "https://github.com/Dilgo-dev/tossit/releases/download/vVERSION_PLACEHOLDER/tossit-darwin-arm64"
+                sha256 "SHA_DARWIN_ARM64_PLACEHOLDER"
+              end
+            end
+
+            on_linux do
+              on_intel do
+                url "https://github.com/Dilgo-dev/tossit/releases/download/vVERSION_PLACEHOLDER/tossit-linux-amd64"
+                sha256 "SHA_LINUX_AMD64_PLACEHOLDER"
+              end
+              on_arm do
+                url "https://github.com/Dilgo-dev/tossit/releases/download/vVERSION_PLACEHOLDER/tossit-linux-arm64"
+                sha256 "SHA_LINUX_ARM64_PLACEHOLDER"
+              end
+            end
+
+            def install
+              binary = Dir["*"].first
+              bin.install binary => "tossit"
+            end
+
+            def post_install
+              (bash_completion/"tossit").write Utils.safe_popen_read(bin/"tossit", "completion", "bash")
+              (zsh_completion/"_tossit").write Utils.safe_popen_read(bin/"tossit", "completion", "zsh")
+              (fish_completion/"tossit.fish").write Utils.safe_popen_read(bin/"tossit", "completion", "fish")
+            end
+
+            test do
+              assert_match "tossit", shell_output("#{bin}/tossit --version")
+            end
+          end
+          FORMULA
+
+          sed -i "s/VERSION_PLACEHOLDER/${{ env.VERSION }}/g" Formula/tossit.rb
+          sed -i "s/SHA_DARWIN_AMD64_PLACEHOLDER/$SHA_DARWIN_AMD64/g" Formula/tossit.rb
+          sed -i "s/SHA_DARWIN_ARM64_PLACEHOLDER/$SHA_DARWIN_ARM64/g" Formula/tossit.rb
+          sed -i "s/SHA_LINUX_AMD64_PLACEHOLDER/$SHA_LINUX_AMD64/g" Formula/tossit.rb
+          sed -i "s/SHA_LINUX_ARM64_PLACEHOLDER/$SHA_LINUX_ARM64/g" Formula/tossit.rb
+
+          git config user.name "Dilgo-dev"
+          git config user.email "58703637+Dilgo-dev@users.noreply.github.com"
+          git add Formula/tossit.rb
+          git commit -m "feat: update tossit to v${{ env.VERSION }}"
+          git push
+
+      - name: Update Scoop bucket
+        run: |
+          SHA_WIN_AMD64=$(grep tossit-windows-amd64 checksums.txt | awk '{print $1}')
+          SHA_WIN_ARM64=$(grep tossit-windows-arm64 checksums.txt | awk '{print $1}')
+
+          git clone https://x-access-token:${{ secrets.PKG_TOKEN }}@github.com/Overcop/scoop-bucket.git
+          cd scoop-bucket
+
+          cat > tossit.json << EOF
+          {
+              "version": "${{ env.VERSION }}",
+              "description": "File transfer tool. Send from CLI, receive anywhere.",
+              "homepage": "https://tossit.dev",
+              "license": "MIT",
+              "architecture": {
+                  "64bit": {
+                      "url": "https://github.com/Dilgo-dev/tossit/releases/download/${{ github.ref_name }}/tossit-windows-amd64.exe#/tossit.exe",
+                      "hash": "$SHA_WIN_AMD64"
+                  },
+                  "arm64": {
+                      "url": "https://github.com/Dilgo-dev/tossit/releases/download/${{ github.ref_name }}/tossit-windows-arm64.exe#/tossit.exe",
+                      "hash": "$SHA_WIN_ARM64"
+                  }
+              },
+              "bin": "tossit.exe",
+              "checkver": {
+                  "github": "https://github.com/Dilgo-dev/tossit"
+              },
+              "autoupdate": {
+                  "architecture": {
+                      "64bit": {
+                          "url": "https://github.com/Dilgo-dev/tossit/releases/download/v\$version/tossit-windows-amd64.exe#/tossit.exe"
+                      },
+                      "arm64": {
+                          "url": "https://github.com/Dilgo-dev/tossit/releases/download/v\$version/tossit-windows-arm64.exe#/tossit.exe"
+                      }
+                  }
+              }
+          }
+          EOF
+
+          git config user.name "Dilgo-dev"
+          git config user.email "58703637+Dilgo-dev@users.noreply.github.com"
+          git add tossit.json
+          git commit -m "feat: update tossit to v${{ env.VERSION }}"
+          git push

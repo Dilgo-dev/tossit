@@ -2,7 +2,7 @@ package main
 
 const defaultRelay = "wss://relay.tossit.dev/ws"
 
-func parseFlags(args []string) (relayURL string, relayToken string, stream bool, dir string, password string, remaining []string) {
+func parseFlags(args []string) (relayURL string, relayToken string, stream bool, dir string, password string, expires string, remaining []string) {
 	relayURL = defaultRelay
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -26,6 +26,11 @@ func parseFlags(args []string) (relayURL string, relayToken string, stream bool,
 		case "--password", "-p":
 			if i+1 < len(args) {
 				password = args[i+1]
+				i++
+			}
+		case "--expires", "-e":
+			if i+1 < len(args) {
+				expires = args[i+1]
 				i++
 			}
 		default:
