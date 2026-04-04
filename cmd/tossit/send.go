@@ -60,10 +60,6 @@ func runSend(args []string) {
 		fmt.Fprintf(os.Stderr, "%s --approve cannot be used with --stream or --direct\n", color.BoldRed("Error:"))
 		os.Exit(1)
 	}
-	if approve && piped {
-		fmt.Fprintf(os.Stderr, "%s --approve cannot be used with piped input\n", color.BoldRed("Error:"))
-		os.Exit(1)
-	}
 
 	opts := transfer.SendOptions{
 		RelayURL:   relayURL,

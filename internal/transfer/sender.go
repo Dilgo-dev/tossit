@@ -336,7 +336,12 @@ func sendReader(ctx context.Context, t Transport, enc *crypto.Encryptor, r io.Re
 
 func approvalLoop(ctx context.Context, pc *PeerConn) error {
 	fmt.Println(color.Dim("Waiting for download requests... (Ctrl+C to stop)"))
-	reader := bufio.NewReader(os.Stdin)
+	tty, err := os.Open("/dev/tty")
+	if err != nil {
+		return fmt.Errorf("cannot open terminal for approval prompt: %w", err)
+	}
+	defer func() { _ = tty.Close() }()
+	reader := bufio.NewReader(tty)
 
 	for {
 		msg, err := pc.RecvRaw()
