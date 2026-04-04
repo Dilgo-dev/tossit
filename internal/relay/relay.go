@@ -33,6 +33,7 @@ type Config struct {
 	UIPassword    string
 	UIPasswordSet bool
 	AdminPassword string
+	MaxDownloads  int
 }
 
 type session struct {
@@ -48,8 +49,10 @@ type session struct {
 }
 
 type transferMeta struct {
-	CreatedAt time.Time `json:"created_at"`
-	ExpiresAt time.Time `json:"expires_at"`
+	CreatedAt    time.Time `json:"created_at"`
+	ExpiresAt    time.Time `json:"expires_at"`
+	MaxDownloads int       `json:"max_downloads,omitempty"`
+	Downloads    int       `json:"downloads"`
 }
 
 type Relay struct {
@@ -158,15 +161,26 @@ func (r *Relay) HandleConn(w http.ResponseWriter, req *http.Request) {
 		rest := msg.Payload[1:]
 		var code string
 		var requestedExpire time.Duration
+		var maxDownloads int
 		if idx := bytes.IndexByte(rest, 0x00); idx >= 0 {
 			code = string(rest[:idx])
-			if secs, err := strconv.Atoi(string(rest[idx+1:])); err == nil && secs > 0 {
-				requestedExpire = time.Duration(secs) * time.Second
+			opts := rest[idx+1:]
+			if idx2 := bytes.IndexByte(opts, 0x00); idx2 >= 0 {
+				if secs, err := strconv.Atoi(string(opts[:idx2])); err == nil && secs > 0 {
+					requestedExpire = time.Duration(secs) * time.Second
+				}
+				if n, err := strconv.Atoi(string(opts[idx2+1:])); err == nil && n > 0 {
+					maxDownloads = n
+				}
+			} else {
+				if secs, err := strconv.Atoi(string(opts)); err == nil && secs > 0 {
+					requestedExpire = time.Duration(secs) * time.Second
+				}
 			}
 		} else {
 			code = string(rest)
 		}
-		r.handleRegister(conn, req, code, mode == 0x01, requestedExpire)
+		r.handleRegister(conn, req, code, mode == 0x01, requestedExpire, maxDownloads)
 	case protocol.MsgJoin:
 		r.handleJoin(conn, req, string(msg.Payload))
 	case protocol.MsgBrowserJoin:
@@ -176,7 +190,7 @@ func (r *Relay) HandleConn(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (r *Relay) handleRegister(conn *websocket.Conn, req *http.Request, code string, streamMode bool, requestedExpire time.Duration) {
+func (r *Relay) handleRegister(conn *websocket.Conn, req *http.Request, code string, streamMode bool, requestedExpire time.Duration, maxDownloads int) {
 	r.mu.Lock()
 	if _, exists := r.sessions[code]; exists {
 		r.mu.Unlock()
@@ -203,11 +217,11 @@ func (r *Relay) handleRegister(conn *websocket.Conn, req *http.Request, code str
 		case <-req.Context().Done():
 		}
 	} else {
-		r.handleStoreForward(conn, req, code, s, requestedExpire)
+		r.handleStoreForward(conn, req, code, s, requestedExpire, maxDownloads)
 	}
 }
 
-func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code string, s *session, requestedExpire time.Duration) {
+func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code string, s *session, requestedExpire time.Duration, maxDownloads int) {
 	dir := filepath.Join(r.cfg.StorageDir, code)
 	_ = os.MkdirAll(dir, 0o750)
 
@@ -273,9 +287,13 @@ func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code
 	if requestedExpire > 0 && requestedExpire < expire {
 		expire = requestedExpire
 	}
+	if r.cfg.MaxDownloads > 0 && (maxDownloads == 0 || maxDownloads > r.cfg.MaxDownloads) {
+		maxDownloads = r.cfg.MaxDownloads
+	}
 	meta := transferMeta{
-		CreatedAt: time.Now(),
-		ExpiresAt: time.Now().Add(expire),
+		CreatedAt:    time.Now(),
+		ExpiresAt:    time.Now().Add(expire),
+		MaxDownloads: maxDownloads,
 	}
 	metaJSON, _ := json.Marshal(meta)
 	_ = os.WriteFile(filepath.Join(dir, "meta.json"), metaJSON, 0o600)
@@ -428,15 +446,47 @@ func (r *Relay) replayStored(conn *websocket.Conn, req *http.Request, code strin
 
 	r.stats.transfersCompleted.Add(1)
 
-	_, data, err := conn.Read(req.Context())
-	if err == nil {
-		msg, decErr := protocol.Decode(data)
-		if decErr == nil && msg.Type == protocol.MsgDeleteOK {
-			_ = os.RemoveAll(filepath.Join(r.cfg.StorageDir, code))
+	_, _, _ = conn.Read(req.Context())
+
+	dir := filepath.Join(r.cfg.StorageDir, code)
+	meta := r.readTransferMeta(code)
+	if meta != nil && meta.MaxDownloads > 0 {
+		meta.Downloads++
+		r.writeTransferMeta(code, meta)
+		if meta.Downloads >= meta.MaxDownloads {
+			_ = os.RemoveAll(dir)
 		}
+	} else {
+		_ = os.RemoveAll(dir)
 	}
 
 	_ = conn.Close(websocket.StatusNormalClosure, "done")
+}
+
+func (r *Relay) readTransferMeta(code string) *transferMeta {
+	metaPath := filepath.Join(r.cfg.StorageDir, code, "meta.json")
+	data, err := os.ReadFile(metaPath)
+	if err != nil {
+		return nil
+	}
+	var meta transferMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return nil
+	}
+	return &meta
+}
+
+func (r *Relay) writeTransferMeta(code string, meta *transferMeta) {
+	metaJSON, err := json.Marshal(meta)
+	if err != nil {
+		return
+	}
+	metaPath := filepath.Join(r.cfg.StorageDir, code, "meta.json")
+	tmpPath := metaPath + ".tmp"
+	if err := os.WriteFile(tmpPath, metaJSON, 0o600); err != nil {
+		return
+	}
+	_ = os.Rename(tmpPath, metaPath)
 }
 
 func (r *Relay) removeSession(code string) {

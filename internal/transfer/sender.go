@@ -30,6 +30,7 @@ type SendOptions struct {
 	Expires    time.Duration
 	Direct     bool
 	StunServer string
+	Multi      int
 }
 
 func Send(ctx context.Context, opts SendOptions) error {
@@ -85,9 +86,15 @@ func Send(ctx context.Context, opts SendOptions) error {
 	if opts.Stream {
 		regPayload[0] = 0x01
 	}
-	if opts.Expires > 0 {
+	if opts.Expires > 0 || opts.Multi > 0 {
 		regPayload = append(regPayload, 0x00)
-		regPayload = append(regPayload, []byte(fmt.Sprintf("%d", int(opts.Expires.Seconds())))...)
+		if opts.Expires > 0 {
+			regPayload = append(regPayload, []byte(fmt.Sprintf("%d", int(opts.Expires.Seconds())))...)
+		}
+	}
+	if opts.Multi > 0 {
+		regPayload = append(regPayload, 0x00)
+		regPayload = append(regPayload, []byte(fmt.Sprintf("%d", opts.Multi))...)
 	}
 	if err := pc.SendRaw(protocol.Message{Type: protocol.MsgRegister, Payload: regPayload}); err != nil {
 		return err
@@ -111,6 +118,9 @@ func Send(ctx context.Context, opts SendOptions) error {
 	}
 	if opts.Expires > 0 {
 		fmt.Printf("%s %s\n", color.Dim("Expires in:"), color.Yellow(opts.Expires.String()))
+	}
+	if opts.Multi > 0 {
+		fmt.Printf("%s %s\n", color.Dim("Max downloads:"), color.Yellow(fmt.Sprintf("%d", opts.Multi)))
 	}
 	fmt.Printf("%s %s\n", color.Dim("Or open in browser:"), color.Cyan(browserURL))
 	qr.Print(browserURL)
