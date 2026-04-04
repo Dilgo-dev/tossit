@@ -3,6 +3,11 @@ name: Deploy Relay
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to deploy (e.g. v0.4.0)"
+        required: true
 
 jobs:
   deploy:
@@ -15,7 +20,8 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            curl -fsSL https://github.com/Dilgo-dev/tossit/releases/download/${{ github.event.release.tag_name }}/relay-linux-amd64 -o /tmp/tossit-relay
+            TAG="${{ github.event.release.tag_name || github.event.inputs.tag }}"
+            curl -fsSL https://github.com/Dilgo-dev/tossit/releases/download/${TAG}/relay-linux-amd64 -o /tmp/tossit-relay
             chmod +x /tmp/tossit-relay
             sudo systemctl stop tossit-relay
             sudo cp /tmp/tossit-relay /usr/local/bin/tossit-relay
