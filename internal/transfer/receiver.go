@@ -8,7 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"time"
+
+	"github.com/Dilgo-dev/tossit/internal/color"
 	"github.com/Dilgo-dev/tossit/internal/crypto"
+	"github.com/Dilgo-dev/tossit/internal/history"
 	"github.com/Dilgo-dev/tossit/internal/progress"
 	"github.com/Dilgo-dev/tossit/internal/protocol"
 	"github.com/coder/websocket"
@@ -19,6 +23,7 @@ type ReceiveOptions struct {
 	RelayToken string
 	Code       string
 	OutputDir  string
+	Password   string
 }
 
 func Receive(ctx context.Context, opts ReceiveOptions) error {
@@ -54,10 +59,10 @@ func Receive(ctx context.Context, opts ReceiveOptions) error {
 	var key []byte
 	switch msg.Type {
 	case protocol.MsgStored:
-		fmt.Println("Downloading stored transfer...")
-		key = crypto.DeriveKeyFromCode(opts.Code)
+		fmt.Println(color.Dim("Downloading stored transfer..."))
+		key = crypto.DeriveKeyFromCode(opts.Code, opts.Password)
 	case protocol.MsgData:
-		fmt.Println("Establishing secure channel...")
+		fmt.Println(color.Dim("Establishing secure channel..."))
 		first := true
 		key, err = crypto.ReceiverKeyExchange(pc.SendPeer, func() ([]byte, error) {
 			if first {
@@ -82,7 +87,7 @@ func Receive(ctx context.Context, opts ReceiveOptions) error {
 		return fmt.Errorf("failed to read metadata: %w", err)
 	}
 
-	fmt.Printf("Receiving: %s (%s)\n", meta.Name, progress.FormatSize(meta.Size))
+	fmt.Printf("%s %s %s\n", color.Dim("Receiving:"), color.Bold(meta.Name), color.Dim("("+progress.FormatSize(meta.Size)+")"))
 
 	dec, err := crypto.NewDecryptor(key)
 	if err != nil {
@@ -90,9 +95,26 @@ func Receive(ctx context.Context, opts ReceiveOptions) error {
 	}
 
 	if meta.IsDir {
-		return receiveArchive(ctx, pc, dec, opts.OutputDir)
+		if err := receiveArchive(ctx, pc, dec, opts.OutputDir); err != nil {
+			return err
+		}
+	} else {
+		if err := receiveFile(ctx, pc, dec, meta, opts.OutputDir); err != nil {
+			return err
+		}
 	}
-	return receiveFile(ctx, pc, dec, meta, opts.OutputDir)
+
+	_ = pc.SendRaw(protocol.Message{Type: protocol.MsgDeleteOK})
+
+	history.Add(history.Entry{
+		Direction: history.Received,
+		Name:      meta.Name,
+		Size:      meta.Size,
+		Code:      opts.Code,
+		Time:      time.Now(),
+	})
+
+	return nil
 }
 
 func receiveFile(ctx context.Context, pc *PeerConn, dec *crypto.Decryptor, meta protocol.Metadata, outputDir string) error {
@@ -129,7 +151,7 @@ func receiveFile(ctx context.Context, pc *PeerConn, dec *crypto.Decryptor, meta 
 				return fmt.Errorf("file hash mismatch: transfer corrupted")
 			}
 			bar.Done()
-			fmt.Printf("Saved to %s\n", outPath)
+			fmt.Printf("%s %s\n", color.Green("Saved to"), color.Bold(outPath))
 			return nil
 		}
 

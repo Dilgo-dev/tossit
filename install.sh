@@ -40,4 +40,49 @@ if ! echo "$PATH" | grep -q "$INSTALL_DIR"; then
     echo ""
 fi
 
+# Install shell completions
+install_completions() {
+    TOSSIT="$INSTALL_DIR/$BINARY"
+
+    # Zsh
+    if command -v zsh >/dev/null 2>&1; then
+        ZSH_COMP_DIR="${ZDOTDIR:-$HOME}/.zfunc"
+        mkdir -p "$ZSH_COMP_DIR"
+        "$TOSSIT" completion zsh > "$ZSH_COMP_DIR/_tossit"
+        # Ensure .zfunc is in fpath (add to .zshrc if not present)
+        ZSHRC="${ZDOTDIR:-$HOME}/.zshrc"
+        if [ -f "$ZSHRC" ]; then
+            if ! grep -q '\.zfunc' "$ZSHRC" 2>/dev/null; then
+                printf '\nfpath=(~/.zfunc $fpath)\nautoload -Uz compinit && compinit\n' >> "$ZSHRC"
+            fi
+        fi
+        echo "Zsh completions installed to $ZSH_COMP_DIR/_tossit"
+    fi
+
+    # Bash
+    if command -v bash >/dev/null 2>&1; then
+        BASH_COMP_DIR=""
+        if [ -d "/etc/bash_completion.d" ] && [ -w "/etc/bash_completion.d" ]; then
+            BASH_COMP_DIR="/etc/bash_completion.d"
+        elif [ -d "$HOME/.local/share/bash-completion/completions" ]; then
+            BASH_COMP_DIR="$HOME/.local/share/bash-completion/completions"
+        else
+            BASH_COMP_DIR="$HOME/.local/share/bash-completion/completions"
+            mkdir -p "$BASH_COMP_DIR"
+        fi
+        "$TOSSIT" completion bash > "$BASH_COMP_DIR/tossit"
+        echo "Bash completions installed to $BASH_COMP_DIR/tossit"
+    fi
+
+    # Fish
+    if command -v fish >/dev/null 2>&1; then
+        FISH_COMP_DIR="$HOME/.config/fish/completions"
+        mkdir -p "$FISH_COMP_DIR"
+        "$TOSSIT" completion fish > "$FISH_COMP_DIR/tossit.fish"
+        echo "Fish completions installed to $FISH_COMP_DIR/tossit.fish"
+    fi
+}
+
+install_completions
+
 echo "Installed $("$INSTALL_DIR/$BINARY" --version)"

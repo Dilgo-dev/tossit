@@ -8,6 +8,8 @@ import (
 	"os"
 	"runtime"
 	"strings"
+
+	"github.com/Dilgo-dev/tossit/internal/color"
 )
 
 const repo = "Dilgo-dev/tossit"
@@ -49,11 +51,11 @@ func Run(current string) error {
 		return fmt.Errorf("failed to check for updates: %w", err)
 	}
 	if !hasUpdate {
-		fmt.Printf("Already on latest version (%s)\n", current)
+		fmt.Printf("%s Already on latest version (%s)\n", color.Green("OK"), current)
 		return nil
 	}
 
-	fmt.Printf("Updating %s -> %s\n", current, latest)
+	fmt.Printf("Updating %s -> %s\n", color.Dim(current), color.BoldCyan(latest))
 
 	goos := runtime.GOOS
 	goarch := runtime.GOARCH
@@ -99,7 +101,7 @@ func Run(current string) error {
 		return fmt.Errorf("failed to replace binary: %w", err)
 	}
 
-	fmt.Printf("Updated to %s\n", latest)
+	fmt.Printf("%s Updated to %s\n", color.Green("OK"), color.BoldCyan(latest))
 	return nil
 }
 

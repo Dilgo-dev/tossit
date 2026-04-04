@@ -377,10 +377,7 @@ func (r *Relay) hasStoredTransfer(code string) bool {
 }
 
 func (r *Relay) replayStored(conn *websocket.Conn, req *http.Request, code string) {
-	defer func() {
-		r.removeSession(code)
-		_ = os.RemoveAll(filepath.Join(r.cfg.StorageDir, code))
-	}()
+	defer r.removeSession(code)
 
 	stored := protocol.Encode(protocol.Message{Type: protocol.MsgStored})
 	if err := conn.Write(req.Context(), websocket.MessageBinary, stored); err != nil {
@@ -414,6 +411,15 @@ func (r *Relay) replayStored(conn *websocket.Conn, req *http.Request, code strin
 	}
 
 	r.stats.transfersCompleted.Add(1)
+
+	_, data, err := conn.Read(req.Context())
+	if err == nil {
+		msg, decErr := protocol.Decode(data)
+		if decErr == nil && msg.Type == protocol.MsgDeleteOK {
+			_ = os.RemoveAll(filepath.Join(r.cfg.StorageDir, code))
+		}
+	}
+
 	_ = conn.Close(websocket.StatusNormalClosure, "done")
 }
 

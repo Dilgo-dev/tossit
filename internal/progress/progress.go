@@ -2,8 +2,9 @@ package progress
 
 import (
 	"fmt"
-	"strings"
 	"time"
+
+	"github.com/Dilgo-dev/tossit/internal/color"
 )
 
 type Bar struct {
@@ -34,29 +35,33 @@ func (b *Bar) render() {
 		elapsed = 0.1
 	}
 
+	if b.total <= 0 {
+		fmt.Printf("\r  %s %s  ",
+			color.Bold(FormatSize(b.current)),
+			color.Cyan(formatSpeed(float64(b.current)/elapsed)),
+		)
+		return
+	}
+
 	pct := float64(b.current) / float64(b.total)
 	if pct > 1 {
 		pct = 1
 	}
 
 	filled := int(pct * float64(b.width))
-	bar := strings.Repeat("=", filled)
-	if filled < b.width {
-		bar += ">"
-		bar += strings.Repeat(" ", b.width-filled-1)
-	}
+	bar := color.ProgressBar(filled, b.width)
 
 	speed := float64(b.current) / elapsed
 	eta := ""
 	if speed > 0 && b.current < b.total {
 		remaining := float64(b.total-b.current) / speed
-		eta = formatDuration(remaining)
+		eta = color.Dim(formatDuration(remaining))
 	}
 
-	fmt.Printf("\r[%s] %3.0f%% %s %s  ",
+	fmt.Printf("\r  %s %s %s %s  ",
 		bar,
-		pct*100,
-		formatSpeed(speed),
+		color.Bold(fmt.Sprintf("%3.0f%%", pct*100)),
+		color.Cyan(formatSpeed(speed)),
 		eta,
 	)
 }
@@ -81,6 +86,37 @@ func formatDuration(seconds float64) string {
 	m := int(seconds) / 60
 	s := int(seconds) % 60
 	return fmt.Sprintf("ETA %d:%02d", m, s)
+}
+
+type Counter struct {
+	current int64
+	start   time.Time
+}
+
+func NewCounter() *Counter {
+	return &Counter{start: time.Now()}
+}
+
+func (c *Counter) Add(n int64) {
+	c.current += n
+	c.render()
+}
+
+func (c *Counter) Done() {
+	c.render()
+	fmt.Println()
+}
+
+func (c *Counter) render() {
+	elapsed := time.Since(c.start).Seconds()
+	if elapsed < 0.1 {
+		elapsed = 0.1
+	}
+	speed := float64(c.current) / elapsed
+	fmt.Printf("\r  %s %s  ",
+		color.Bold(FormatSize(c.current)),
+		color.Cyan(formatSpeed(speed)),
+	)
 }
 
 func FormatSize(bytes int64) string {
