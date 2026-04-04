@@ -21,28 +21,38 @@ type SendOptions struct {
 	RelayToken string
 	Paths      []string
 	Stream     bool
+	Stdin      io.Reader
 }
 
 func Send(ctx context.Context, opts SendOptions) error {
-	if len(opts.Paths) == 0 {
+	isStdin := opts.Stdin != nil
+	if !isStdin && len(opts.Paths) == 0 {
 		return fmt.Errorf("no files specified")
 	}
 
-	info, err := os.Stat(opts.Paths[0])
-	if err != nil {
-		return err
-	}
-
-	isMulti := len(opts.Paths) > 1 || info.IsDir()
-
 	var name string
 	var size int64
-	if isMulti {
-		name = "archive.tar"
+	var fileMode os.FileMode
+	var isMulti bool
+
+	if isStdin {
+		name = "stdin.txt"
 		size = 0
+		fileMode = 0o644
 	} else {
-		name = info.Name()
-		size = info.Size()
+		info, err := os.Stat(opts.Paths[0])
+		if err != nil {
+			return err
+		}
+		isMulti = len(opts.Paths) > 1 || info.IsDir()
+		fileMode = info.Mode()
+		if isMulti {
+			name = "archive.tar"
+			size = 0
+		} else {
+			name = info.Name()
+			size = info.Size()
+		}
 	}
 
 	dialURL := opts.RelayURL
@@ -121,7 +131,7 @@ func Send(ctx context.Context, opts SendOptions) error {
 	meta := protocol.Metadata{
 		Name:      name,
 		Size:      size,
-		Mode:      info.Mode(),
+		Mode:      fileMode,
 		IsDir:     isMulti,
 		ChunkSize: crypto.ChunkSize,
 	}
@@ -142,7 +152,11 @@ func Send(ctx context.Context, opts SendOptions) error {
 		return err
 	}
 
-	if isMulti {
+	if isStdin {
+		if err := sendReader(ctx, pc, enc, opts.Stdin); err != nil {
+			return err
+		}
+	} else if isMulti {
 		if err := sendArchive(ctx, pc, enc, opts.Paths); err != nil {
 			return err
 		}
@@ -211,6 +225,49 @@ func sendFile(ctx context.Context, pc *PeerConn, enc *crypto.Encryptor, path str
 	}
 
 	bar.Done()
+
+	done := protocol.EncodeDone(hasher.Sum(nil))
+	return pc.SendPeer(done)
+}
+
+func sendReader(ctx context.Context, pc *PeerConn, enc *crypto.Encryptor, r io.Reader) error {
+	counter := progress.NewCounter()
+	hasher := sha256.New()
+	buf := make([]byte, crypto.ChunkSize)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		default:
+		}
+
+		n, err := r.Read(buf)
+		if n > 0 {
+			chunk := buf[:n]
+			hasher.Write(chunk)
+
+			seq, ciphertext, encErr := enc.EncryptChunk(chunk)
+			if encErr != nil {
+				return encErr
+			}
+
+			encoded := protocol.EncodeChunk(seq, ciphertext)
+			if sendErr := pc.SendPeer(encoded); sendErr != nil {
+				return sendErr
+			}
+
+			counter.Add(int64(n))
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			return err
+		}
+	}
+
+	counter.Done()
 
 	done := protocol.EncodeDone(hasher.Sum(nil))
 	return pc.SendPeer(done)

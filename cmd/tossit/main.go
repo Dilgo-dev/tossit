@@ -18,6 +18,10 @@ const banner = `  ______                   ______     __
 
 func main() {
 	if len(os.Args) < 2 {
+		if stdinIsPipe() {
+			runSend(nil)
+			return
+		}
 		printHelp()
 		return
 	}
@@ -61,4 +65,13 @@ func printHelp() {
 	fmt.Printf("  %s    Save files to directory (receive only)\n", color.Yellow("--dir <path>"))
 	fmt.Printf("  %s           Show version\n", color.Yellow("--version"))
 	fmt.Printf("  %s              Show this help\n", color.Yellow("--help"))
+	fmt.Println()
+	fmt.Println(color.Bold("Pipe:"))
+	fmt.Printf("  %s\n", color.Dim("echo \"hello\" | tossit"))
+	fmt.Printf("  %s\n", color.Dim("cat file.sql | tossit send"))
+}
+
+func stdinIsPipe() bool {
+	fi, _ := os.Stdin.Stat()
+	return fi.Mode()&os.ModeCharDevice == 0
 }

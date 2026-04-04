@@ -80,6 +80,37 @@ func formatDuration(seconds float64) string {
 	return fmt.Sprintf("ETA %d:%02d", m, s)
 }
 
+type Counter struct {
+	current int64
+	start   time.Time
+}
+
+func NewCounter() *Counter {
+	return &Counter{start: time.Now()}
+}
+
+func (c *Counter) Add(n int64) {
+	c.current += n
+	c.render()
+}
+
+func (c *Counter) Done() {
+	c.render()
+	fmt.Println()
+}
+
+func (c *Counter) render() {
+	elapsed := time.Since(c.start).Seconds()
+	if elapsed < 0.1 {
+		elapsed = 0.1
+	}
+	speed := float64(c.current) / elapsed
+	fmt.Printf("\r  %s %s  ",
+		color.Bold(FormatSize(c.current)),
+		color.Cyan(formatSpeed(speed)),
+	)
+}
+
 func FormatSize(bytes int64) string {
 	switch {
 	case bytes >= 1<<30:
