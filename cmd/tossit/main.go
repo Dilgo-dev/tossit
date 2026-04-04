@@ -74,6 +74,7 @@ func printHelp() {
 	fmt.Printf("  %s  Password-protect the transfer\n", color.Yellow("--password <pw>"))
 	fmt.Printf("  %s  Transfer expiry (e.g. 1h, 30m, 12h)\n", color.Yellow("--expires <dur>"))
 	fmt.Printf("  %s      Allow N downloads from the same code\n", color.Yellow("--multi <N>"))
+	fmt.Printf("  %s          Approve each download before it starts\n", color.Yellow("--approve"))
 	fmt.Printf("  %s           Show version\n", color.Yellow("--version"))
 	fmt.Printf("  %s              Show this help\n", color.Yellow("--help"))
 	fmt.Println()

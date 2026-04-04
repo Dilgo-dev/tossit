@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -45,6 +46,8 @@ type session struct {
 	browserReceiver bool
 	stored          bool
 	streamMode      bool
+	approveMode     bool
+	approvalCh      chan chan bool
 	code            string
 }
 
@@ -53,6 +56,7 @@ type transferMeta struct {
 	ExpiresAt    time.Time `json:"expires_at"`
 	MaxDownloads int       `json:"max_downloads,omitempty"`
 	Downloads    int       `json:"downloads"`
+	ApproveMode  bool      `json:"approve_mode,omitempty"`
 }
 
 type Relay struct {
@@ -180,7 +184,7 @@ func (r *Relay) HandleConn(w http.ResponseWriter, req *http.Request) {
 		} else {
 			code = string(rest)
 		}
-		r.handleRegister(conn, req, code, mode == 0x01, requestedExpire, maxDownloads)
+		r.handleRegister(conn, req, code, mode == 0x01, mode == 0x02, requestedExpire, maxDownloads)
 	case protocol.MsgJoin:
 		r.handleJoin(conn, req, string(msg.Payload))
 	case protocol.MsgBrowserJoin:
@@ -190,7 +194,7 @@ func (r *Relay) HandleConn(w http.ResponseWriter, req *http.Request) {
 	}
 }
 
-func (r *Relay) handleRegister(conn *websocket.Conn, req *http.Request, code string, streamMode bool, requestedExpire time.Duration, maxDownloads int) {
+func (r *Relay) handleRegister(conn *websocket.Conn, req *http.Request, code string, streamMode bool, approveMode bool, requestedExpire time.Duration, maxDownloads int) {
 	r.mu.Lock()
 	if _, exists := r.sessions[code]; exists {
 		r.mu.Unlock()
@@ -198,12 +202,14 @@ func (r *Relay) handleRegister(conn *websocket.Conn, req *http.Request, code str
 		return
 	}
 	s := &session{
-		sender:     conn,
-		joined:     make(chan struct{}),
-		bridgeDone: make(chan struct{}),
-		uploadDone: make(chan struct{}),
-		streamMode: streamMode,
-		code:       code,
+		sender:      conn,
+		joined:      make(chan struct{}),
+		bridgeDone:  make(chan struct{}),
+		uploadDone:  make(chan struct{}),
+		streamMode:  streamMode,
+		approveMode: approveMode,
+		approvalCh:  make(chan chan bool, 1),
+		code:        code,
 	}
 	r.sessions[code] = s
 	r.mu.Unlock()
@@ -225,7 +231,7 @@ func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code
 	dir := filepath.Join(r.cfg.StorageDir, code)
 	_ = os.MkdirAll(dir, 0o750)
 
-	dataPath := filepath.Join(dir, "data")
+	dataPath := filepath.Clean(filepath.Join(dir, "data"))
 	f, err := os.Create(dataPath)
 	if err != nil {
 		r.sendError(req.Context(), conn, "storage error")
@@ -253,8 +259,12 @@ func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code
 			return fmt.Errorf("file too large (max %d bytes)", r.cfg.MaxSize)
 		}
 
+		payloadLen := len(msg.Payload)
+		if payloadLen > math.MaxUint32 {
+			return fmt.Errorf("payload too large")
+		}
 		lenBuf := make([]byte, 4)
-		binary.BigEndian.PutUint32(lenBuf, uint32(len(msg.Payload)))
+		binary.BigEndian.PutUint32(lenBuf, uint32(payloadLen))
 		if _, err := f.Write(lenBuf); err != nil {
 			return err
 		}
@@ -294,6 +304,7 @@ func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code
 		CreatedAt:    time.Now(),
 		ExpiresAt:    time.Now().Add(expire),
 		MaxDownloads: maxDownloads,
+		ApproveMode:  s.approveMode,
 	}
 	metaJSON, _ := json.Marshal(meta)
 	_ = os.WriteFile(filepath.Join(dir, "meta.json"), metaJSON, 0o600)
@@ -305,7 +316,36 @@ func (r *Relay) handleStoreForward(conn *websocket.Conn, req *http.Request, code
 
 	stored := protocol.Encode(protocol.Message{Type: protocol.MsgStored})
 	_ = conn.Write(req.Context(), websocket.MessageBinary, stored)
-	_ = conn.Close(websocket.StatusNormalClosure, "stored")
+
+	if !s.approveMode {
+		_ = conn.Close(websocket.StatusNormalClosure, "stored")
+		return
+	}
+
+	defer r.removeSession(code)
+	for {
+		select {
+		case respCh := <-s.approvalCh:
+			approvalReq := protocol.Encode(protocol.Message{Type: protocol.MsgApprovalReq})
+			if err := conn.Write(req.Context(), websocket.MessageBinary, approvalReq); err != nil {
+				respCh <- false
+				return
+			}
+			_, data, err := conn.Read(req.Context())
+			if err != nil {
+				respCh <- false
+				return
+			}
+			msg, err := protocol.Decode(data)
+			if err != nil {
+				respCh <- false
+				continue
+			}
+			respCh <- msg.Type == protocol.MsgApprove
+		case <-req.Context().Done():
+			return
+		}
+	}
 }
 
 func (r *Relay) handleStreamMode(conn *websocket.Conn, req *http.Request, s *session) {
@@ -325,12 +365,35 @@ func (r *Relay) handleStreamMode(conn *websocket.Conn, req *http.Request, s *ses
 	r.stats.transfersCompleted.Add(1)
 }
 
+func (r *Relay) requestApproval(ctx context.Context, s *session, conn *websocket.Conn) bool {
+	respCh := make(chan bool, 1)
+	select {
+	case s.approvalCh <- respCh:
+	case <-ctx.Done():
+		return false
+	}
+	select {
+	case approved := <-respCh:
+		if !approved {
+			r.sendError(ctx, conn, "download rejected by sender")
+		}
+		return approved
+	case <-ctx.Done():
+		return false
+	}
+}
+
 func (r *Relay) handleJoin(conn *websocket.Conn, req *http.Request, code string) {
 	r.mu.Lock()
 	s, exists := r.sessions[code]
 	if !exists {
 		r.mu.Unlock()
 		if r.hasStoredTransfer(code) {
+			meta := r.readTransferMeta(code)
+			if meta != nil && meta.ApproveMode {
+				r.sendError(req.Context(), conn, "sender approval required but sender is offline")
+				return
+			}
 			r.replayStored(conn, req, code)
 			return
 		}
@@ -338,7 +401,13 @@ func (r *Relay) handleJoin(conn *websocket.Conn, req *http.Request, code string)
 		return
 	}
 	if s.stored {
+		approveMode := s.approveMode
 		r.mu.Unlock()
+		if approveMode {
+			if !r.requestApproval(req.Context(), s, conn) {
+				return
+			}
+		}
 		r.replayStored(conn, req, code)
 		return
 	}
@@ -355,9 +424,15 @@ func (r *Relay) handleJoin(conn *websocket.Conn, req *http.Request, code string)
 		<-s.bridgeDone
 	} else {
 		uploadDone := s.uploadDone
+		approveMode := s.approveMode
 		r.mu.Unlock()
 		select {
 		case <-uploadDone:
+			if approveMode {
+				if !r.requestApproval(req.Context(), s, conn) {
+					return
+				}
+			}
 			r.replayStored(conn, req, code)
 		case <-req.Context().Done():
 		}
@@ -370,6 +445,11 @@ func (r *Relay) handleBrowserJoin(conn *websocket.Conn, req *http.Request, code 
 	if !exists {
 		r.mu.Unlock()
 		if r.hasStoredTransfer(code) {
+			meta := r.readTransferMeta(code)
+			if meta != nil && meta.ApproveMode {
+				r.sendError(req.Context(), conn, "sender approval required but sender is offline")
+				return
+			}
 			r.replayStored(conn, req, code)
 			return
 		}
@@ -377,7 +457,13 @@ func (r *Relay) handleBrowserJoin(conn *websocket.Conn, req *http.Request, code 
 		return
 	}
 	if s.stored {
+		approveMode := s.approveMode
 		r.mu.Unlock()
+		if approveMode {
+			if !r.requestApproval(req.Context(), s, conn) {
+				return
+			}
+		}
 		r.replayStored(conn, req, code)
 		return
 	}
@@ -395,9 +481,15 @@ func (r *Relay) handleBrowserJoin(conn *websocket.Conn, req *http.Request, code 
 		<-s.bridgeDone
 	} else {
 		uploadDone := s.uploadDone
+		approveMode := s.approveMode
 		r.mu.Unlock()
 		select {
 		case <-uploadDone:
+			if approveMode {
+				if !r.requestApproval(req.Context(), s, conn) {
+					return
+				}
+			}
 			r.replayStored(conn, req, code)
 		case <-req.Context().Done():
 		}
@@ -411,20 +503,19 @@ func (r *Relay) hasStoredTransfer(code string) bool {
 }
 
 func (r *Relay) replayStored(conn *websocket.Conn, req *http.Request, code string) {
-	defer r.removeSession(code)
-
 	stored := protocol.Encode(protocol.Message{Type: protocol.MsgStored})
 	if err := conn.Write(req.Context(), websocket.MessageBinary, stored); err != nil {
 		return
 	}
 
 	dataPath := filepath.Join(r.cfg.StorageDir, code, "data")
+	dataPath = filepath.Clean(dataPath)
 	f, err := os.Open(dataPath)
 	if err != nil {
 		r.sendError(req.Context(), conn, "transfer not found")
 		return
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	lenBuf := make([]byte, 4)
 	for {
@@ -450,22 +541,36 @@ func (r *Relay) replayStored(conn *websocket.Conn, req *http.Request, code strin
 
 	dir := filepath.Join(r.cfg.StorageDir, code)
 	meta := r.readTransferMeta(code)
+
+	r.mu.Lock()
+	s := r.sessions[code]
+	isApproveMode := s != nil && s.approveMode
+	r.mu.Unlock()
+
 	if meta != nil && meta.MaxDownloads > 0 {
 		meta.Downloads++
 		r.writeTransferMeta(code, meta)
 		if meta.Downloads >= meta.MaxDownloads {
 			_ = os.RemoveAll(dir)
+			if isApproveMode && s != nil {
+				closeMsg := protocol.Encode(protocol.Message{Type: protocol.MsgClose})
+				_ = s.sender.Write(context.Background(), websocket.MessageBinary, closeMsg)
+			}
+			r.removeSession(code)
+			_ = conn.Close(websocket.StatusNormalClosure, "done")
+			return
 		}
-	} else {
+	} else if !isApproveMode {
 		_ = os.RemoveAll(dir)
+		r.removeSession(code)
 	}
 
 	_ = conn.Close(websocket.StatusNormalClosure, "done")
 }
 
 func (r *Relay) readTransferMeta(code string) *transferMeta {
-	metaPath := filepath.Join(r.cfg.StorageDir, code, "meta.json")
-	data, err := os.ReadFile(metaPath) //nolint:gosec // path built from trusted storage dir + code
+	metaPath := filepath.Clean(filepath.Join(r.cfg.StorageDir, code, "meta.json"))
+	data, err := os.ReadFile(metaPath)
 	if err != nil {
 		return nil
 	}
@@ -521,7 +626,7 @@ func (r *Relay) cleanup() {
 		if !entry.IsDir() {
 			continue
 		}
-		metaPath := filepath.Join(r.cfg.StorageDir, entry.Name(), "meta.json")
+		metaPath := filepath.Clean(filepath.Join(r.cfg.StorageDir, entry.Name(), "meta.json"))
 		data, err := os.ReadFile(metaPath)
 		if err != nil {
 			continue

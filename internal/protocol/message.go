@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"math"
 )
 
 const (
@@ -17,6 +18,9 @@ const (
 	MsgBrowserJoin byte = 0x07
 	MsgStored      byte = 0x08
 	MsgDeleteOK    byte = 0x09
+	MsgApprovalReq byte = 0x0A
+	MsgApprove     byte = 0x0B
+	MsgReject      byte = 0x0C
 
 	PeerMetadata  byte = 0x10
 	PeerChunk     byte = 0x11
@@ -129,6 +133,9 @@ func DecodeDone(payload []byte) ([]byte, error) {
 }
 
 func EncodeResumeReq(offset int64) []byte {
+	if offset < 0 {
+		offset = 0
+	}
 	buf := make([]byte, 9)
 	buf[0] = PeerResumeReq
 	binary.BigEndian.PutUint64(buf[1:], uint64(offset))
@@ -139,7 +146,11 @@ func DecodeResumeReq(payload []byte) (int64, error) {
 	if len(payload) != 9 || payload[0] != PeerResumeReq {
 		return 0, errors.New("not a resume request")
 	}
-	return int64(binary.BigEndian.Uint64(payload[1:])), nil
+	v := binary.BigEndian.Uint64(payload[1:])
+	if v > uint64(math.MaxInt64) {
+		return 0, errors.New("offset overflow")
+	}
+	return int64(v), nil
 }
 
 func EncodeAck(seq uint32) []byte {

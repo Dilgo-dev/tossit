@@ -1,11 +1,13 @@
 package transfer
 
 import (
+	"bufio"
 	"context"
 	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"time"
@@ -31,6 +33,7 @@ type SendOptions struct {
 	Direct     bool
 	StunServer string
 	Multi      int
+	Approve    bool
 }
 
 func Send(ctx context.Context, opts SendOptions) error {
@@ -85,6 +88,8 @@ func Send(ctx context.Context, opts SendOptions) error {
 	regPayload := append([]byte{0x00}, []byte(code)...)
 	if opts.Stream {
 		regPayload[0] = 0x01
+	} else if opts.Approve {
+		regPayload[0] = 0x02
 	}
 	if opts.Expires > 0 || opts.Multi > 0 {
 		regPayload = append(regPayload, 0x00)
@@ -216,6 +221,11 @@ func Send(ctx context.Context, opts SendOptions) error {
 		switch msg.Type {
 		case protocol.MsgStored:
 			fmt.Println(color.Green("Upload complete!"), "File available for download.")
+			if opts.Approve {
+				if err := approvalLoop(ctx, pc); err != nil {
+					return err
+				}
+			}
 		case protocol.MsgError:
 			return fmt.Errorf("relay: %s", msg.Payload)
 		}
@@ -233,11 +243,11 @@ func Send(ctx context.Context, opts SendOptions) error {
 }
 
 func sendFile(ctx context.Context, t Transport, enc *crypto.Encryptor, path string, size int64) error {
-	f, err := os.Open(path)
+	f, err := os.Open(filepath.Clean(path))
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	bar := progress.New(size)
 	hasher := sha256.New()
@@ -322,6 +332,54 @@ func sendReader(ctx context.Context, t Transport, enc *crypto.Encryptor, r io.Re
 
 	done := protocol.EncodeDone(hasher.Sum(nil))
 	return t.SendPeer(done)
+}
+
+func approvalLoop(ctx context.Context, pc *PeerConn) error {
+	fmt.Println(color.Dim("Waiting for download requests... (Ctrl+C to stop)"))
+	reader := bufio.NewReader(os.Stdin)
+
+	for {
+		msg, err := pc.RecvRaw()
+		if err != nil {
+			fmt.Println(color.Dim("Session ended."))
+			return nil
+		}
+
+		switch msg.Type {
+		case protocol.MsgApprovalReq:
+			fmt.Printf("\n%s\n", color.Yellow("Download requested"))
+			fmt.Print(color.Bold("Approve? [y/n]: "))
+
+			inputCh := make(chan string, 1)
+			go func() {
+				line, _ := reader.ReadString('\n')
+				inputCh <- strings.TrimSpace(strings.ToLower(line))
+			}()
+
+			var response byte
+			select {
+			case input := <-inputCh:
+				if input == "y" || input == "yes" {
+					response = protocol.MsgApprove
+					fmt.Println(color.Green("Approved."))
+				} else {
+					response = protocol.MsgReject
+					fmt.Println(color.Red("Rejected."))
+				}
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+
+			if err := pc.SendRaw(protocol.Message{Type: response}); err != nil {
+				return err
+			}
+		case protocol.MsgClose:
+			fmt.Println(color.Dim("All downloads completed. Session ended."))
+			return nil
+		case protocol.MsgError:
+			return fmt.Errorf("relay: %s", msg.Payload)
+		}
+	}
 }
 
 func negotiateP2PSender(ctx context.Context, pc *PeerConn, stunServer string) (Transport, error) {
