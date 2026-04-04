@@ -8,8 +8,11 @@ import (
 	"os"
 	"strings"
 
+	"time"
+
 	"github.com/Dilgo-dev/tossit/internal/color"
 	"github.com/Dilgo-dev/tossit/internal/crypto"
+	"github.com/Dilgo-dev/tossit/internal/history"
 	"github.com/Dilgo-dev/tossit/internal/progress"
 	"github.com/Dilgo-dev/tossit/internal/protocol"
 	"github.com/Dilgo-dev/tossit/internal/qr"
@@ -185,6 +188,14 @@ func Send(ctx context.Context, opts SendOptions) error {
 			return fmt.Errorf("relay: %s", msg.Payload)
 		}
 	}
+
+	history.Add(history.Entry{
+		Direction: history.Sent,
+		Name:      name,
+		Size:      size,
+		Code:      code,
+		Time:      time.Now(),
+	})
 
 	return nil
 }

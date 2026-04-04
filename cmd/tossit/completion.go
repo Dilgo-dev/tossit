@@ -11,7 +11,7 @@ const bashCompletion = `_tossit() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    commands="send receive relay update help"
+    commands="send receive relay history update completion help"
     global_opts="--relay --relay-token --stream --password --version --help"
     send_opts="--relay --relay-token --stream --password"
     recv_opts="--relay --relay-token --password --dir"
@@ -33,6 +33,7 @@ const bashCompletion = `_tossit() {
             send|s) cmd="send"; break;;
             receive|recv|r) cmd="receive"; break;;
             relay) cmd="relay"; break;;
+            history) cmd="history"; break;;
         esac
     done
 
@@ -49,6 +50,9 @@ const bashCompletion = `_tossit() {
             ;;
         relay)
             COMPREPLY=( $(compgen -W "$relay_opts" -- "$cur") )
+            ;;
+        history)
+            COMPREPLY=( $(compgen -W "clear" -- "$cur") )
             ;;
         "")
             if [[ "$cur" == -* ]]; then
@@ -70,7 +74,9 @@ _tossit() {
         'send:Upload and share files'
         'receive:Download files'
         'relay:Run a self-hosted relay server'
+        'history:Show transfer history'
         'update:Check for updates'
+        'completion:Generate shell completions'
         'help:Show help'
     )
 
@@ -105,6 +111,9 @@ _tossit() {
                         '-d[Save files to directory]:directory:_directories' \
                         '1:code:'
                     ;;
+                history)
+                    _arguments '1:action:(clear)'
+                    ;;
                 relay)
                     _arguments \
                         '--config[Load config from JSON file]:file:_files' \
@@ -134,13 +143,21 @@ const fishCompletion = `complete -c tossit -f
 complete -c tossit -n '__fish_use_subcommand' -a send -d 'Upload and share files'
 complete -c tossit -n '__fish_use_subcommand' -a receive -d 'Download files'
 complete -c tossit -n '__fish_use_subcommand' -a relay -d 'Run a self-hosted relay server'
+complete -c tossit -n '__fish_use_subcommand' -a history -d 'Show transfer history'
 complete -c tossit -n '__fish_use_subcommand' -a update -d 'Check for updates'
+complete -c tossit -n '__fish_use_subcommand' -a completion -d 'Generate shell completions'
 complete -c tossit -n '__fish_use_subcommand' -a help -d 'Show help'
 complete -c tossit -n '__fish_use_subcommand' -F
 
 # Global options
 complete -c tossit -l version -d 'Show version'
 complete -c tossit -l help -d 'Show help'
+
+# History options
+complete -c tossit -n '__fish_seen_subcommand_from history' -a clear -d 'Clear history'
+
+# Completion options
+complete -c tossit -n '__fish_seen_subcommand_from completion' -a 'bash zsh fish' -d 'Shell type'
 
 # Send options
 complete -c tossit -n '__fish_seen_subcommand_from send s' -l relay -x -d 'Relay server URL'

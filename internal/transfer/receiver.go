@@ -8,8 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
+	"time"
+
 	"github.com/Dilgo-dev/tossit/internal/color"
 	"github.com/Dilgo-dev/tossit/internal/crypto"
+	"github.com/Dilgo-dev/tossit/internal/history"
 	"github.com/Dilgo-dev/tossit/internal/progress"
 	"github.com/Dilgo-dev/tossit/internal/protocol"
 	"github.com/coder/websocket"
@@ -102,6 +105,15 @@ func Receive(ctx context.Context, opts ReceiveOptions) error {
 	}
 
 	_ = pc.SendRaw(protocol.Message{Type: protocol.MsgDeleteOK})
+
+	history.Add(history.Entry{
+		Direction: history.Received,
+		Name:      meta.Name,
+		Size:      meta.Size,
+		Code:      opts.Code,
+		Time:      time.Now(),
+	})
+
 	return nil
 }
 

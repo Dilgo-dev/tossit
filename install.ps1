@@ -36,7 +36,7 @@ $completionBlock = @'
 # tossit completions
 Register-ArgumentCompleter -Native -CommandName tossit -ScriptBlock {
     param($wordToComplete, $commandAst, $cursorPosition)
-    $commands = @('send', 'receive', 'relay', 'update', 'completion', 'help')
+    $commands = @('send', 'receive', 'relay', 'history', 'update', 'completion', 'help')
     $globalOpts = @('--relay', '--relay-token', '--stream', '--password', '--dir', '--version', '--help')
 
     $tokens = $commandAst.ToString().Split()

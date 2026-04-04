@@ -33,6 +33,8 @@ func main() {
 		runReceive(os.Args[2:])
 	case "relay":
 		runRelay(os.Args[2:])
+	case "history":
+		runHistory(os.Args[2:])
 	case "completion":
 		runCompletion(os.Args[2:])
 	case "update":
@@ -58,6 +60,7 @@ func printHelp() {
 	fmt.Printf("  %s    Same as above (explicit)\n", color.Cyan("tossit send <file|dir> ..."))
 	fmt.Printf("  %s         Download files\n", color.Cyan("tossit receive <code>"))
 	fmt.Printf("  %s                 Run a self-hosted relay server\n", color.Cyan("tossit relay"))
+	fmt.Printf("  %s               Show transfer history\n", color.Cyan("tossit history"))
 	fmt.Printf("  %s                Check for updates\n", color.Cyan("tossit update"))
 	fmt.Printf("  %s  Generate shell completions\n", color.Cyan("tossit completion <shell>"))
 	fmt.Println()
