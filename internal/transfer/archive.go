@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/Dilgo-dev/tossit/internal/color"
 	"github.com/Dilgo-dev/tossit/internal/crypto"
 	"github.com/Dilgo-dev/tossit/internal/protocol"
 )
@@ -73,7 +74,7 @@ func sendArchive(ctx context.Context, pc *PeerConn, enc *crypto.Encryptor, paths
 	if err != nil {
 		return err
 	}
-	fmt.Println("Transfer complete.")
+	fmt.Println(color.Green("Transfer complete."))
 	return nil
 }
 
@@ -145,7 +146,7 @@ func receiveArchive(ctx context.Context, pc *PeerConn, dec *crypto.Decryptor, ou
 		}
 	}
 
-	fmt.Printf("Extracted to %s\n", outputDir)
+	fmt.Printf("%s %s\n", color.Green("Extracted to"), color.Bold(outputDir))
 	return nil
 }
 

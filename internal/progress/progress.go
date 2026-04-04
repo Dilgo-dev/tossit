@@ -2,8 +2,9 @@ package progress
 
 import (
 	"fmt"
-	"strings"
 	"time"
+
+	"github.com/Dilgo-dev/tossit/internal/color"
 )
 
 type Bar struct {
@@ -40,23 +41,19 @@ func (b *Bar) render() {
 	}
 
 	filled := int(pct * float64(b.width))
-	bar := strings.Repeat("=", filled)
-	if filled < b.width {
-		bar += ">"
-		bar += strings.Repeat(" ", b.width-filled-1)
-	}
+	bar := color.ProgressBar(filled, b.width)
 
 	speed := float64(b.current) / elapsed
 	eta := ""
 	if speed > 0 && b.current < b.total {
 		remaining := float64(b.total-b.current) / speed
-		eta = formatDuration(remaining)
+		eta = color.Dim(formatDuration(remaining))
 	}
 
-	fmt.Printf("\r[%s] %3.0f%% %s %s  ",
+	fmt.Printf("\r  %s %s %s %s  ",
 		bar,
-		pct*100,
-		formatSpeed(speed),
+		color.Bold(fmt.Sprintf("%3.0f%%", pct*100)),
+		color.Cyan(formatSpeed(speed)),
 		eta,
 	)
 }

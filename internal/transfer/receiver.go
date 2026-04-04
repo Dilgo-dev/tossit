@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Dilgo-dev/tossit/internal/color"
 	"github.com/Dilgo-dev/tossit/internal/crypto"
 	"github.com/Dilgo-dev/tossit/internal/progress"
 	"github.com/Dilgo-dev/tossit/internal/protocol"
@@ -54,10 +55,10 @@ func Receive(ctx context.Context, opts ReceiveOptions) error {
 	var key []byte
 	switch msg.Type {
 	case protocol.MsgStored:
-		fmt.Println("Downloading stored transfer...")
+		fmt.Println(color.Dim("Downloading stored transfer..."))
 		key = crypto.DeriveKeyFromCode(opts.Code)
 	case protocol.MsgData:
-		fmt.Println("Establishing secure channel...")
+		fmt.Println(color.Dim("Establishing secure channel..."))
 		first := true
 		key, err = crypto.ReceiverKeyExchange(pc.SendPeer, func() ([]byte, error) {
 			if first {
@@ -82,7 +83,7 @@ func Receive(ctx context.Context, opts ReceiveOptions) error {
 		return fmt.Errorf("failed to read metadata: %w", err)
 	}
 
-	fmt.Printf("Receiving: %s (%s)\n", meta.Name, progress.FormatSize(meta.Size))
+	fmt.Printf("%s %s %s\n", color.Dim("Receiving:"), color.Bold(meta.Name), color.Dim("("+progress.FormatSize(meta.Size)+")"))
 
 	dec, err := crypto.NewDecryptor(key)
 	if err != nil {
@@ -129,7 +130,7 @@ func receiveFile(ctx context.Context, pc *PeerConn, dec *crypto.Decryptor, meta 
 				return fmt.Errorf("file hash mismatch: transfer corrupted")
 			}
 			bar.Done()
-			fmt.Printf("Saved to %s\n", outPath)
+			fmt.Printf("%s %s\n", color.Green("Saved to"), color.Bold(outPath))
 			return nil
 		}
 

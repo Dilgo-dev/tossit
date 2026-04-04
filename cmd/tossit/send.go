@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/Dilgo-dev/tossit/internal/color"
 	"github.com/Dilgo-dev/tossit/internal/transfer"
 )
 
@@ -18,7 +19,7 @@ func runSend(args []string) {
 
 	for _, p := range paths {
 		if _, err := os.Stat(p); err != nil {
-			fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+			fmt.Fprintf(os.Stderr, "%s %s\n", color.BoldRed("Error:"), err)
 			os.Exit(1)
 		}
 	}
@@ -34,7 +35,7 @@ func runSend(args []string) {
 	}
 
 	if err := transfer.Send(ctx, opts); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		fmt.Fprintf(os.Stderr, "%s %s\n", color.BoldRed("Error:"), err)
 		os.Exit(1)
 	}
 }

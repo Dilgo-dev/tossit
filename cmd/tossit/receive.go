@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/Dilgo-dev/tossit/internal/color"
 	"github.com/Dilgo-dev/tossit/internal/transfer"
 )
 
@@ -33,7 +34,7 @@ func runReceive(args []string) {
 	}
 
 	if err := transfer.Receive(ctx, opts); err != nil {
-		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
+		fmt.Fprintf(os.Stderr, "%s %s\n", color.BoldRed("Error:"), err)
 		os.Exit(1)
 	}
 }

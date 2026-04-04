@@ -8,6 +8,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Dilgo-dev/tossit/internal/color"
 	"github.com/Dilgo-dev/tossit/internal/crypto"
 	"github.com/Dilgo-dev/tossit/internal/progress"
 	"github.com/Dilgo-dev/tossit/internal/protocol"
@@ -79,15 +80,15 @@ func Send(ctx context.Context, opts SendOptions) error {
 		browserURL += "?token=" + opts.RelayToken
 	}
 
-	fmt.Println("Code:", code)
-	fmt.Printf("On another machine, run: tossit receive %s\n", code)
-	fmt.Printf("Or open in browser: %s\n", browserURL)
+	fmt.Printf("%s %s\n", color.Dim("Code:"), color.BoldCyan(code))
+	fmt.Printf("%s tossit receive %s\n", color.Dim("On another machine, run:"), color.BoldCyan(code))
+	fmt.Printf("%s %s\n", color.Dim("Or open in browser:"), color.Cyan(browserURL))
 	qr.Print(browserURL)
 
 	var key []byte
 
 	if opts.Stream {
-		fmt.Println("Waiting for receiver...")
+		fmt.Println(color.Dim("Waiting for receiver..."))
 
 		msg, err := pc.RecvRaw()
 		if err != nil {
@@ -99,7 +100,7 @@ func Send(ctx context.Context, opts SendOptions) error {
 
 		switch msg.Type {
 		case protocol.MsgReady:
-			fmt.Println("Receiver connected. Establishing secure channel...")
+			fmt.Println(color.Green("Receiver connected."), color.Dim("Establishing secure channel..."))
 			key, err = crypto.SenderKeyExchange(pc.SendPeer, func() ([]byte, error) {
 				return pc.RecvPeer()
 			}, code)
@@ -107,13 +108,13 @@ func Send(ctx context.Context, opts SendOptions) error {
 				return fmt.Errorf("key exchange failed: %w", err)
 			}
 		case protocol.MsgBrowserJoin:
-			fmt.Println("Browser receiver connected. Establishing secure channel...")
+			fmt.Println(color.Green("Browser receiver connected."), color.Dim("Establishing secure channel..."))
 			key = crypto.DeriveKeyFromCode(code)
 		default:
 			return fmt.Errorf("unexpected message from relay: %d", msg.Type)
 		}
 	} else {
-		fmt.Println("Uploading...")
+		fmt.Println(color.Dim("Uploading..."))
 		key = crypto.DeriveKeyFromCode(code)
 	}
 
@@ -157,7 +158,7 @@ func Send(ctx context.Context, opts SendOptions) error {
 			return err
 		}
 		if msg.Type == protocol.MsgStored {
-			fmt.Println("Upload complete! File available for download.")
+			fmt.Println(color.Green("Upload complete!"), "File available for download.")
 		} else if msg.Type == protocol.MsgError {
 			return fmt.Errorf("relay: %s", msg.Payload)
 		}
