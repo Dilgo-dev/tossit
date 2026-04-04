@@ -21,6 +21,7 @@ const (
 	MsgApprovalReq byte = 0x0A
 	MsgApprove     byte = 0x0B
 	MsgReject      byte = 0x0C
+	MsgWaiting     byte = 0x0D
 
 	PeerMetadata  byte = 0x10
 	PeerChunk     byte = 0x11

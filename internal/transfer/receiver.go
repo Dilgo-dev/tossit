@@ -59,6 +59,17 @@ func Receive(ctx context.Context, opts ReceiveOptions) error {
 		return fmt.Errorf("relay: %s", msg.Payload)
 	}
 
+	if msg.Type == protocol.MsgWaiting {
+		fmt.Println(color.Dim("Waiting for sender approval..."))
+		msg, err = pc.RecvRaw()
+		if err != nil {
+			return err
+		}
+		if msg.Type == protocol.MsgError {
+			return fmt.Errorf("relay: %s", msg.Payload)
+		}
+	}
+
 	var key []byte
 	var t Transport = pc
 

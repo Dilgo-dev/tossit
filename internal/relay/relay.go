@@ -366,6 +366,10 @@ func (r *Relay) handleStreamMode(conn *websocket.Conn, req *http.Request, s *ses
 }
 
 func (r *Relay) requestApproval(ctx context.Context, s *session, conn *websocket.Conn) bool {
+	waiting := protocol.Encode(protocol.Message{Type: protocol.MsgWaiting})
+	if err := conn.Write(ctx, websocket.MessageBinary, waiting); err != nil {
+		return false
+	}
 	respCh := make(chan bool, 1)
 	select {
 	case s.approvalCh <- respCh:
@@ -560,8 +564,12 @@ func (r *Relay) replayStored(conn *websocket.Conn, req *http.Request, code strin
 			_ = conn.Close(websocket.StatusNormalClosure, "done")
 			return
 		}
-	} else if !isApproveMode {
+	} else {
 		_ = os.RemoveAll(dir)
+		if isApproveMode && s != nil {
+			closeMsg := protocol.Encode(protocol.Message{Type: protocol.MsgClose})
+			_ = s.sender.Write(context.Background(), websocket.MessageBinary, closeMsg)
+		}
 		r.removeSession(code)
 	}
 
