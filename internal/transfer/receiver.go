@@ -27,6 +27,7 @@ type ReceiveOptions struct {
 	Password   string
 	Direct     bool
 	StunServer string
+	Limit      int64
 }
 
 func Receive(ctx context.Context, opts ReceiveOptions) error {
@@ -110,6 +111,10 @@ func Receive(ctx context.Context, opts ReceiveOptions) error {
 		}
 	default:
 		return fmt.Errorf("unexpected message from relay: %d", msg.Type)
+	}
+
+	if opts.Limit > 0 {
+		t = NewThrottledTransport(t, opts.Limit)
 	}
 
 	payload, err := t.RecvPeer()

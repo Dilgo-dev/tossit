@@ -34,6 +34,7 @@ type SendOptions struct {
 	StunServer string
 	Multi      int
 	Approve    bool
+	Limit      int64
 }
 
 func Send(ctx context.Context, opts SendOptions) error {
@@ -172,6 +173,10 @@ func Send(ctx context.Context, opts SendOptions) error {
 	} else {
 		fmt.Println(color.Dim("Uploading..."))
 		key = crypto.DeriveKeyFromCode(code, opts.Password)
+	}
+
+	if opts.Limit > 0 {
+		t = NewThrottledTransport(t, opts.Limit)
 	}
 
 	meta := protocol.Metadata{
