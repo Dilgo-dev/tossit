@@ -14,7 +14,7 @@ import (
 	"github.com/Dilgo-dev/tossit/internal/protocol"
 )
 
-func sendArchive(ctx context.Context, pc *PeerConn, enc *crypto.Encryptor, paths []string) error {
+func sendArchive(ctx context.Context, t Transport, enc *crypto.Encryptor, paths []string) error {
 	pr, pw := io.Pipe()
 
 	hasher := sha256.New()
@@ -53,14 +53,14 @@ func sendArchive(ctx context.Context, pc *PeerConn, enc *crypto.Encryptor, paths
 					return
 				}
 				encoded := protocol.EncodeChunk(seq, ciphertext)
-				if sendErr := pc.SendPeer(encoded); sendErr != nil {
+				if sendErr := t.SendPeer(encoded); sendErr != nil {
 					errCh <- sendErr
 					return
 				}
 			}
 			if err == io.EOF {
 				done := protocol.EncodeDone(hasher.Sum(nil))
-				errCh <- pc.SendPeer(done)
+				errCh <- t.SendPeer(done)
 				return
 			}
 			if err != nil {
@@ -78,7 +78,7 @@ func sendArchive(ctx context.Context, pc *PeerConn, enc *crypto.Encryptor, paths
 	return nil
 }
 
-func receiveArchive(ctx context.Context, pc *PeerConn, dec *crypto.Decryptor, outputDir string) error {
+func receiveArchive(ctx context.Context, t Transport, dec *crypto.Decryptor, outputDir string) error {
 	pr, pw := io.Pipe()
 	hasher := sha256.New()
 	var expectedHash []byte
@@ -94,7 +94,7 @@ func receiveArchive(ctx context.Context, pc *PeerConn, dec *crypto.Decryptor, ou
 			default:
 			}
 
-			payload, err := pc.RecvPeer()
+			payload, err := t.RecvPeer()
 			if err != nil {
 				pw.CloseWithError(err)
 				return

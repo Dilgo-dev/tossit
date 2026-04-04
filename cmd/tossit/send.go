@@ -12,7 +12,7 @@ import (
 )
 
 func runSend(args []string) {
-	relayURL, relayToken, stream, _, password, expires, paths := parseFlags(args)
+	relayURL, relayToken, stream, _, password, expires, direct, stunServer, paths := parseFlags(args)
 
 	piped := stdinIsPipe()
 	if len(paths) == 0 && !piped {
@@ -41,6 +41,10 @@ func runSend(args []string) {
 		expireDuration = d
 	}
 
+	if direct {
+		stream = true
+	}
+
 	opts := transfer.SendOptions{
 		RelayURL:   relayURL,
 		RelayToken: relayToken,
@@ -48,6 +52,8 @@ func runSend(args []string) {
 		Stream:     stream,
 		Password:   password,
 		Expires:    expireDuration,
+		Direct:     direct,
+		StunServer: stunServer,
 	}
 
 	if piped && len(paths) == 0 {

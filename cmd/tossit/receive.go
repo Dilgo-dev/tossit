@@ -11,7 +11,7 @@ import (
 )
 
 func runReceive(args []string) {
-	relayURL, relayToken, _, dir, password, _, remaining := parseFlags(args)
+	relayURL, relayToken, _, dir, password, _, direct, stunServer, remaining := parseFlags(args)
 	if len(remaining) == 0 {
 		fmt.Fprintln(os.Stderr, "Usage: tossit receive [--relay URL] [--dir PATH] [--password PW] <code>")
 		os.Exit(1)
@@ -41,6 +41,8 @@ func runReceive(args []string) {
 		Code:       code,
 		OutputDir:  outputDir,
 		Password:   password,
+		Direct:     direct,
+		StunServer: stunServer,
 	}
 
 	if err := transfer.Receive(ctx, opts); err != nil {

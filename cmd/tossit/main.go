@@ -68,6 +68,8 @@ func printHelp() {
 	fmt.Printf("  %s      Relay server URL\n", color.Yellow("--relay <url>"))
 	fmt.Printf("  %s  Auth token for private relay\n", color.Yellow("--relay-token <t>"))
 	fmt.Printf("  %s           Real-time streaming (both sides online)\n", color.Yellow("--stream"))
+	fmt.Printf("  %s           Direct P2P transfer with NAT traversal\n", color.Yellow("--direct"))
+	fmt.Printf("  %s     Custom STUN server (default: stun.l.google.com:19302)\n", color.Yellow("--stun <addr>"))
 	fmt.Printf("  %s    Save files to directory (receive only)\n", color.Yellow("--dir <path>"))
 	fmt.Printf("  %s  Password-protect the transfer\n", color.Yellow("--password <pw>"))
 	fmt.Printf("  %s  Transfer expiry (e.g. 1h, 30m, 12h)\n", color.Yellow("--expires <dur>"))
