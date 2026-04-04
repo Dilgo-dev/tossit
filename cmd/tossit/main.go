@@ -33,6 +33,8 @@ func main() {
 		runReceive(os.Args[2:])
 	case "relay":
 		runRelay(os.Args[2:])
+	case "completion":
+		runCompletion(os.Args[2:])
 	case "update":
 		if err := update.Run(version); err != nil {
 			fmt.Fprintf(os.Stderr, "%s %s\n", color.BoldRed("Error:"), err)
@@ -57,6 +59,7 @@ func printHelp() {
 	fmt.Printf("  %s         Download files\n", color.Cyan("tossit receive <code>"))
 	fmt.Printf("  %s                 Run a self-hosted relay server\n", color.Cyan("tossit relay"))
 	fmt.Printf("  %s                Check for updates\n", color.Cyan("tossit update"))
+	fmt.Printf("  %s  Generate shell completions\n", color.Cyan("tossit completion <shell>"))
 	fmt.Println()
 	fmt.Println(color.Bold("Options:"))
 	fmt.Printf("  %s      Relay server URL\n", color.Yellow("--relay <url>"))

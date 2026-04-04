@@ -25,4 +25,47 @@ if ($currentPath -notlike "*$installDir*") {
     Write-Host "Added $installDir to PATH (restart terminal to apply)"
 }
 
+# Install PowerShell completions
+$profileDir = Split-Path $PROFILE
+if (-not (Test-Path $profileDir)) {
+    New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
+}
+
+$completionBlock = @'
+
+# tossit completions
+Register-ArgumentCompleter -Native -CommandName tossit -ScriptBlock {
+    param($wordToComplete, $commandAst, $cursorPosition)
+    $commands = @('send', 'receive', 'relay', 'update', 'completion', 'help')
+    $globalOpts = @('--relay', '--relay-token', '--stream', '--password', '--dir', '--version', '--help')
+
+    $tokens = $commandAst.ToString().Split()
+    $cmd = $null
+    foreach ($t in $tokens[1..($tokens.Length-1)]) {
+        if ($t -in @('send', 's', 'receive', 'recv', 'r', 'relay')) {
+            $cmd = $t; break
+        }
+    }
+
+    $opts = switch ($cmd) {
+        { $_ -in 'send', 's' }       { @('--relay', '--relay-token', '--stream', '--password', '-p') }
+        { $_ -in 'receive', 'recv', 'r' } { @('--relay', '--relay-token', '--password', '-p', '--dir', '-d') }
+        'relay'                       { @('--config', '--port', '--storage', '--expire', '--max-size', '--rate-limit', '--auth-token', '--allow-ips', '--ui', '--ui-password', '--admin-password', '--help') }
+        default                       { $commands + $globalOpts }
+    }
+
+    $opts | Where-Object { $_ -like "$wordToComplete*" } | ForEach-Object {
+        [System.Management.Automation.CompletionResult]::new($_, $_, 'ParameterValue', $_)
+    }
+}
+'@
+
+if (-not (Test-Path $PROFILE)) {
+    Set-Content $PROFILE $completionBlock
+    Write-Host "PowerShell completions installed to $PROFILE"
+} elseif (-not (Select-String -Path $PROFILE -Pattern "tossit completions" -Quiet)) {
+    Add-Content $PROFILE $completionBlock
+    Write-Host "PowerShell completions installed to $PROFILE"
+}
+
 Write-Host "Installed $(& $dest --version)"
