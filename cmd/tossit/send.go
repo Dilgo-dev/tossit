@@ -11,17 +11,17 @@ import (
 )
 
 func runSend(args []string) {
-	relayURL, relayToken, stream, _, paths := parseFlags(args)
+	relayURL, relayToken, stream, _, password, paths := parseFlags(args)
 
 	piped := stdinIsPipe()
 	if len(paths) == 0 && !piped {
-		fmt.Fprintln(os.Stderr, "Usage: tossit send [--relay URL] [--stream] <file|dir> ...")
+		fmt.Fprintln(os.Stderr, "Usage: tossit send [--relay URL] [--stream] [--password PW] <file|dir> ...")
 		fmt.Fprintln(os.Stderr, "       echo \"text\" | tossit send")
 		os.Exit(1)
 	}
 
 	for _, p := range paths {
-		if _, err := os.Stat(p); err != nil {
+		if _, err := os.Stat(p); err != nil { //nolint:gosec // CLI receives paths from user args
 			fmt.Fprintf(os.Stderr, "%s %s\n", color.BoldRed("Error:"), err)
 			os.Exit(1)
 		}
@@ -35,6 +35,7 @@ func runSend(args []string) {
 		RelayToken: relayToken,
 		Paths:      paths,
 		Stream:     stream,
+		Password:   password,
 	}
 
 	if piped && len(paths) == 0 {

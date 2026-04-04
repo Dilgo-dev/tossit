@@ -33,16 +33,16 @@ func wrap(style, s string) string {
 	return style + s + reset
 }
 
-func Bold(s string) string       { return wrap(bold, s) }
-func Dim(s string) string        { return wrap(textDim, s) }
-func Red(s string) string        { return wrap(red, s) }
-func Green(s string) string      { return wrap(success, s) }
-func Yellow(s string) string     { return wrap(accentDim, s) }
-func Cyan(s string) string       { return wrap(accent, s) }
-func BoldCyan(s string) string   { return wrap(bold+accent, s) }
-func BoldRed(s string) string    { return wrap(bold+red, s) }
-func Accent(s string) string     { return wrap(accent, s) }
-func AccentDim(s string) string  { return wrap(accentDim, s) }
+func Bold(s string) string      { return wrap(bold, s) }
+func Dim(s string) string       { return wrap(textDim, s) }
+func Red(s string) string       { return wrap(red, s) }
+func Green(s string) string     { return wrap(success, s) }
+func Yellow(s string) string    { return wrap(accentDim, s) }
+func Cyan(s string) string      { return wrap(accent, s) }
+func BoldCyan(s string) string  { return wrap(bold+accent, s) }
+func BoldRed(s string) string   { return wrap(bold+red, s) }
+func Accent(s string) string    { return wrap(accent, s) }
+func AccentDim(s string) string { return wrap(accentDim, s) }
 
 func Sprintf(style, format string, a ...any) string {
 	return wrap(style, fmt.Sprintf(format, a...))

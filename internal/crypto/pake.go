@@ -63,8 +63,12 @@ func ReceiverKeyExchange(sendMsg func([]byte) error, recvMsg func() ([]byte, err
 	return deriveKey(sessionKey), nil
 }
 
-func DeriveKeyFromCode(code string) []byte {
-	return argon2.IDKey([]byte(code), kdfSalt, 1, 64*1024, 4, keyLen)
+func DeriveKeyFromCode(code string, password string) []byte {
+	input := code
+	if password != "" {
+		input = code + ":" + password
+	}
+	return argon2.IDKey([]byte(input), kdfSalt, 1, 64*1024, 4, keyLen)
 }
 
 func deriveKey(sessionKey []byte) []byte {

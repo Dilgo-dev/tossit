@@ -16,6 +16,7 @@ const (
 	MsgClose       byte = 0x06
 	MsgBrowserJoin byte = 0x07
 	MsgStored      byte = 0x08
+	MsgDeleteOK    byte = 0x09
 
 	PeerMetadata  byte = 0x10
 	PeerChunk     byte = 0x11

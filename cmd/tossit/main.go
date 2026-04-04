@@ -63,6 +63,7 @@ func printHelp() {
 	fmt.Printf("  %s  Auth token for private relay\n", color.Yellow("--relay-token <t>"))
 	fmt.Printf("  %s           Real-time streaming (both sides online)\n", color.Yellow("--stream"))
 	fmt.Printf("  %s    Save files to directory (receive only)\n", color.Yellow("--dir <path>"))
+	fmt.Printf("  %s  Password-protect the transfer\n", color.Yellow("--password <pw>"))
 	fmt.Printf("  %s           Show version\n", color.Yellow("--version"))
 	fmt.Printf("  %s              Show this help\n", color.Yellow("--help"))
 	fmt.Println()

@@ -20,6 +20,7 @@ type ReceiveOptions struct {
 	RelayToken string
 	Code       string
 	OutputDir  string
+	Password   string
 }
 
 func Receive(ctx context.Context, opts ReceiveOptions) error {
@@ -56,7 +57,7 @@ func Receive(ctx context.Context, opts ReceiveOptions) error {
 	switch msg.Type {
 	case protocol.MsgStored:
 		fmt.Println(color.Dim("Downloading stored transfer..."))
-		key = crypto.DeriveKeyFromCode(opts.Code)
+		key = crypto.DeriveKeyFromCode(opts.Code, opts.Password)
 	case protocol.MsgData:
 		fmt.Println(color.Dim("Establishing secure channel..."))
 		first := true
@@ -91,9 +92,17 @@ func Receive(ctx context.Context, opts ReceiveOptions) error {
 	}
 
 	if meta.IsDir {
-		return receiveArchive(ctx, pc, dec, opts.OutputDir)
+		if err := receiveArchive(ctx, pc, dec, opts.OutputDir); err != nil {
+			return err
+		}
+	} else {
+		if err := receiveFile(ctx, pc, dec, meta, opts.OutputDir); err != nil {
+			return err
+		}
 	}
-	return receiveFile(ctx, pc, dec, meta, opts.OutputDir)
+
+	_ = pc.SendRaw(protocol.Message{Type: protocol.MsgDeleteOK})
+	return nil
 }
 
 func receiveFile(ctx context.Context, pc *PeerConn, dec *crypto.Decryptor, meta protocol.Metadata, outputDir string) error {

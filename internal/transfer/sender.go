@@ -22,6 +22,7 @@ type SendOptions struct {
 	Paths      []string
 	Stream     bool
 	Stdin      io.Reader
+	Password   string
 }
 
 func Send(ctx context.Context, opts SendOptions) error {
@@ -91,7 +92,12 @@ func Send(ctx context.Context, opts SendOptions) error {
 	}
 
 	fmt.Printf("%s %s\n", color.Dim("Code:"), color.BoldCyan(code))
-	fmt.Printf("%s tossit receive %s\n", color.Dim("On another machine, run:"), color.BoldCyan(code))
+	if opts.Password != "" {
+		fmt.Printf("%s tossit receive --password <pw> %s\n", color.Dim("On another machine, run:"), color.BoldCyan(code))
+		fmt.Printf("%s %s\n", color.Dim("Password protected:"), color.Yellow("receiver must use the same --password"))
+	} else {
+		fmt.Printf("%s tossit receive %s\n", color.Dim("On another machine, run:"), color.BoldCyan(code))
+	}
 	fmt.Printf("%s %s\n", color.Dim("Or open in browser:"), color.Cyan(browserURL))
 	qr.Print(browserURL)
 
@@ -119,13 +125,13 @@ func Send(ctx context.Context, opts SendOptions) error {
 			}
 		case protocol.MsgBrowserJoin:
 			fmt.Println(color.Green("Browser receiver connected."), color.Dim("Establishing secure channel..."))
-			key = crypto.DeriveKeyFromCode(code)
+			key = crypto.DeriveKeyFromCode(code, opts.Password)
 		default:
 			return fmt.Errorf("unexpected message from relay: %d", msg.Type)
 		}
 	} else {
 		fmt.Println(color.Dim("Uploading..."))
-		key = crypto.DeriveKeyFromCode(code)
+		key = crypto.DeriveKeyFromCode(code, opts.Password)
 	}
 
 	meta := protocol.Metadata{
@@ -152,15 +158,16 @@ func Send(ctx context.Context, opts SendOptions) error {
 		return err
 	}
 
-	if isStdin {
+	switch {
+	case isStdin:
 		if err := sendReader(ctx, pc, enc, opts.Stdin); err != nil {
 			return err
 		}
-	} else if isMulti {
+	case isMulti:
 		if err := sendArchive(ctx, pc, enc, opts.Paths); err != nil {
 			return err
 		}
-	} else {
+	default:
 		if err := sendFile(ctx, pc, enc, opts.Paths[0], size); err != nil {
 			return err
 		}
@@ -171,9 +178,10 @@ func Send(ctx context.Context, opts SendOptions) error {
 		if err != nil {
 			return err
 		}
-		if msg.Type == protocol.MsgStored {
+		switch msg.Type {
+		case protocol.MsgStored:
 			fmt.Println(color.Green("Upload complete!"), "File available for download.")
-		} else if msg.Type == protocol.MsgError {
+		case protocol.MsgError:
 			return fmt.Errorf("relay: %s", msg.Payload)
 		}
 	}
