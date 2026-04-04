@@ -11,16 +11,25 @@ import (
 )
 
 func runReceive(args []string) {
-	relayURL, relayToken, _, remaining := parseFlags(args)
+	relayURL, relayToken, _, dir, remaining := parseFlags(args)
 	if len(remaining) == 0 {
-		fmt.Fprintln(os.Stderr, "Usage: tossit receive [--relay URL] [--relay-token TOKEN] <code>")
+		fmt.Fprintln(os.Stderr, "Usage: tossit receive [--relay URL] [--relay-token TOKEN] [--dir PATH] <code>")
 		os.Exit(1)
 	}
 
 	code := remaining[0]
 	outputDir := "."
-	if len(remaining) > 1 {
+	if dir != "" {
+		outputDir = dir
+	} else if len(remaining) > 1 {
 		outputDir = remaining[1]
+	}
+
+	if outputDir != "." {
+		if err := os.MkdirAll(outputDir, 0o755); err != nil {
+			fmt.Fprintf(os.Stderr, "%s %s\n", color.BoldRed("Error:"), err)
+			os.Exit(1)
+		}
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)

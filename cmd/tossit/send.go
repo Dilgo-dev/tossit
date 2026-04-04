@@ -11,7 +11,7 @@ import (
 )
 
 func runSend(args []string) {
-	relayURL, relayToken, stream, paths := parseFlags(args)
+	relayURL, relayToken, stream, _, paths := parseFlags(args)
 	if len(paths) == 0 {
 		fmt.Fprintln(os.Stderr, "Usage: tossit send [--relay URL] [--relay-token TOKEN] [--stream] <file|dir> ...")
 		os.Exit(1)
