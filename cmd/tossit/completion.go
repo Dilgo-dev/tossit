@@ -13,12 +13,12 @@ const bashCompletion = `_tossit() {
 
     commands="send receive relay history update completion help"
     global_opts="--relay --relay-token --stream --password --version --help"
-    send_opts="--relay --relay-token --stream --password"
-    recv_opts="--relay --relay-token --password --dir"
+    send_opts="--relay --relay-token --stream --password --direct --stun --multi --approve --limit --expires"
+    recv_opts="--relay --relay-token --password --dir --direct --stun --limit"
     relay_opts="--config --port --storage --expire --max-size --rate-limit --auth-token --allow-ips --ui --ui-password --admin-password --help"
 
     case "$prev" in
-        --relay|--relay-token|--password|--dir|--config|--port|--storage|--expire|--max-size|--rate-limit|--auth-token|--allow-ips|--ui-password|--admin-password|-p|-d)
+        --relay|--relay-token|--password|--dir|--config|--port|--storage|--expire|--max-size|--rate-limit|--auth-token|--allow-ips|--ui-password|--admin-password|--stun|--multi|--limit|--expires|-p|-d|-m|-l|-e)
             return 0
             ;;
         --ui)
@@ -99,6 +99,15 @@ _tossit() {
                         '--stream[Real-time streaming]' \
                         '--password[Password-protect the transfer]:password:' \
                         '-p[Password-protect the transfer]:password:' \
+                        '--direct[Direct P2P transfer with NAT traversal]' \
+                        '--stun[Custom STUN server]:addr:' \
+                        '--multi[Allow N downloads from the same code]:count:' \
+                        '-m[Allow N downloads from the same code]:count:' \
+                        '--approve[Approve each download before it starts]' \
+                        '--limit[Throttle speed]:rate:' \
+                        '-l[Throttle speed]:rate:' \
+                        '--expires[Transfer expiry]:duration:' \
+                        '-e[Transfer expiry]:duration:' \
                         '*:file:_files'
                     ;;
                 receive|recv|r)
@@ -109,6 +118,10 @@ _tossit() {
                         '-p[Password for protected transfer]:password:' \
                         '--dir[Save files to directory]:directory:_directories' \
                         '-d[Save files to directory]:directory:_directories' \
+                        '--direct[Direct P2P transfer with NAT traversal]' \
+                        '--stun[Custom STUN server]:addr:' \
+                        '--limit[Throttle speed]:rate:' \
+                        '-l[Throttle speed]:rate:' \
                         '1:code:'
                     ;;
                 history)
@@ -165,6 +178,15 @@ complete -c tossit -n '__fish_seen_subcommand_from send s' -l relay-token -x -d 
 complete -c tossit -n '__fish_seen_subcommand_from send s' -l stream -d 'Real-time streaming'
 complete -c tossit -n '__fish_seen_subcommand_from send s' -l password -x -d 'Password-protect'
 complete -c tossit -n '__fish_seen_subcommand_from send s' -s p -x -d 'Password-protect'
+complete -c tossit -n '__fish_seen_subcommand_from send s' -l direct -d 'Direct P2P transfer'
+complete -c tossit -n '__fish_seen_subcommand_from send s' -l stun -x -d 'Custom STUN server'
+complete -c tossit -n '__fish_seen_subcommand_from send s' -l multi -x -d 'Allow N downloads'
+complete -c tossit -n '__fish_seen_subcommand_from send s' -s m -x -d 'Allow N downloads'
+complete -c tossit -n '__fish_seen_subcommand_from send s' -l approve -d 'Approve each download'
+complete -c tossit -n '__fish_seen_subcommand_from send s' -l limit -x -d 'Throttle speed'
+complete -c tossit -n '__fish_seen_subcommand_from send s' -s l -x -d 'Throttle speed'
+complete -c tossit -n '__fish_seen_subcommand_from send s' -l expires -x -d 'Transfer expiry'
+complete -c tossit -n '__fish_seen_subcommand_from send s' -s e -x -d 'Transfer expiry'
 complete -c tossit -n '__fish_seen_subcommand_from send s' -F
 
 # Receive options
@@ -174,6 +196,10 @@ complete -c tossit -n '__fish_seen_subcommand_from receive recv r' -l password -
 complete -c tossit -n '__fish_seen_subcommand_from receive recv r' -s p -x -d 'Password'
 complete -c tossit -n '__fish_seen_subcommand_from receive recv r' -l dir -x -d 'Output directory'
 complete -c tossit -n '__fish_seen_subcommand_from receive recv r' -s d -x -d 'Output directory'
+complete -c tossit -n '__fish_seen_subcommand_from receive recv r' -l direct -d 'Direct P2P transfer'
+complete -c tossit -n '__fish_seen_subcommand_from receive recv r' -l stun -x -d 'Custom STUN server'
+complete -c tossit -n '__fish_seen_subcommand_from receive recv r' -l limit -x -d 'Throttle speed'
+complete -c tossit -n '__fish_seen_subcommand_from receive recv r' -s l -x -d 'Throttle speed'
 
 # Relay options
 complete -c tossit -n '__fish_seen_subcommand_from relay' -l config -rF -d 'Config file'
