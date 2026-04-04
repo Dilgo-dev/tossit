@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strconv"
 	"time"
 
 	"github.com/Dilgo-dev/tossit/internal/color"
@@ -12,7 +13,7 @@ import (
 )
 
 func runSend(args []string) {
-	relayURL, relayToken, stream, _, password, expires, paths := parseFlags(args)
+	relayURL, relayToken, stream, _, password, expires, direct, stunServer, multi, paths := parseFlags(args)
 
 	piped := stdinIsPipe()
 	if len(paths) == 0 && !piped {
@@ -41,6 +42,20 @@ func runSend(args []string) {
 		expireDuration = d
 	}
 
+	var multiCount int
+	if multi != "" {
+		n, err := strconv.Atoi(multi)
+		if err != nil || n < 1 {
+			fmt.Fprintf(os.Stderr, "%s --multi must be a positive integer\n", color.BoldRed("Error:"))
+			os.Exit(1)
+		}
+		multiCount = n
+	}
+
+	if direct {
+		stream = true
+	}
+
 	opts := transfer.SendOptions{
 		RelayURL:   relayURL,
 		RelayToken: relayToken,
@@ -48,6 +63,9 @@ func runSend(args []string) {
 		Stream:     stream,
 		Password:   password,
 		Expires:    expireDuration,
+		Direct:     direct,
+		StunServer: stunServer,
+		Multi:      multiCount,
 	}
 
 	if piped && len(paths) == 0 {

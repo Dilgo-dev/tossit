@@ -28,6 +28,7 @@ func main() {
 	uiEnabled := true
 	uiPassword := ""
 	adminPassword := ""
+	maxDownloads := 0
 
 	flagSet := map[string]bool{}
 
@@ -50,6 +51,7 @@ func main() {
 			fmt.Println("  --allow-ips <list>  Comma-separated IP allowlist")
 			fmt.Println("  --ui <bool>         Enable web UI (default: true)")
 			fmt.Println("  --ui-password <pw>  Password to access web UI")
+			fmt.Println("  --max-downloads <n> Max downloads per transfer (default: 0=unlimited)")
 			fmt.Println("  --admin-password <> Admin password (default: auto-generated, 'off' to disable)")
 			fmt.Println("  --version           Show version")
 			return
@@ -122,6 +124,15 @@ func main() {
 				uiPassword = os.Args[i]
 				flagSet["ui-password"] = true
 			}
+		case "--max-downloads":
+			if i+1 < len(os.Args) {
+				i++
+				n, err := strconv.Atoi(os.Args[i])
+				if err == nil {
+					maxDownloads = n
+					flagSet["max-downloads"] = true
+				}
+			}
 		case "--admin-password":
 			if i+1 < len(os.Args) {
 				i++
@@ -184,6 +195,7 @@ func main() {
 		UIPassword:    uiPassword,
 		UIPasswordSet: flagSet["ui-password"],
 		AdminPassword: adminPassword,
+		MaxDownloads:  maxDownloads,
 	}
 
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)

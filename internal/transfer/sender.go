@@ -13,6 +13,7 @@ import (
 	"github.com/Dilgo-dev/tossit/internal/color"
 	"github.com/Dilgo-dev/tossit/internal/crypto"
 	"github.com/Dilgo-dev/tossit/internal/history"
+	"github.com/Dilgo-dev/tossit/internal/p2p"
 	"github.com/Dilgo-dev/tossit/internal/progress"
 	"github.com/Dilgo-dev/tossit/internal/protocol"
 	"github.com/Dilgo-dev/tossit/internal/qr"
@@ -27,6 +28,9 @@ type SendOptions struct {
 	Stdin      io.Reader
 	Password   string
 	Expires    time.Duration
+	Direct     bool
+	StunServer string
+	Multi      int
 }
 
 func Send(ctx context.Context, opts SendOptions) error {
@@ -82,9 +86,15 @@ func Send(ctx context.Context, opts SendOptions) error {
 	if opts.Stream {
 		regPayload[0] = 0x01
 	}
-	if opts.Expires > 0 {
+	if opts.Expires > 0 || opts.Multi > 0 {
 		regPayload = append(regPayload, 0x00)
-		regPayload = append(regPayload, []byte(fmt.Sprintf("%d", int(opts.Expires.Seconds())))...)
+		if opts.Expires > 0 {
+			regPayload = append(regPayload, []byte(fmt.Sprintf("%d", int(opts.Expires.Seconds())))...)
+		}
+	}
+	if opts.Multi > 0 {
+		regPayload = append(regPayload, 0x00)
+		regPayload = append(regPayload, []byte(fmt.Sprintf("%d", opts.Multi))...)
 	}
 	if err := pc.SendRaw(protocol.Message{Type: protocol.MsgRegister, Payload: regPayload}); err != nil {
 		return err
@@ -109,10 +119,14 @@ func Send(ctx context.Context, opts SendOptions) error {
 	if opts.Expires > 0 {
 		fmt.Printf("%s %s\n", color.Dim("Expires in:"), color.Yellow(opts.Expires.String()))
 	}
+	if opts.Multi > 0 {
+		fmt.Printf("%s %s\n", color.Dim("Max downloads:"), color.Yellow(fmt.Sprintf("%d", opts.Multi)))
+	}
 	fmt.Printf("%s %s\n", color.Dim("Or open in browser:"), color.Cyan(browserURL))
 	qr.Print(browserURL)
 
 	var key []byte
+	var t Transport = pc
 
 	if opts.Stream {
 		fmt.Println(color.Dim("Waiting for receiver..."))
@@ -128,8 +142,18 @@ func Send(ctx context.Context, opts SendOptions) error {
 		switch msg.Type {
 		case protocol.MsgReady:
 			fmt.Println(color.Green("Receiver connected."), color.Dim("Establishing secure channel..."))
-			key, err = crypto.SenderKeyExchange(pc.SendPeer, func() ([]byte, error) {
-				return pc.RecvPeer()
+
+			if opts.Direct {
+				if udpT, p2pErr := negotiateP2PSender(ctx, pc, opts.StunServer); p2pErr == nil {
+					fmt.Println(color.Green("Direct P2P connection established."))
+					t = udpT
+				} else {
+					fmt.Println(color.Yellow("P2P failed, falling back to relay."))
+				}
+			}
+
+			key, err = crypto.SenderKeyExchange(t.SendPeer, func() ([]byte, error) {
+				return t.RecvPeer()
 			}, code)
 			if err != nil {
 				return fmt.Errorf("key exchange failed: %w", err)
@@ -160,7 +184,7 @@ func Send(ctx context.Context, opts SendOptions) error {
 	if err != nil {
 		return err
 	}
-	if err := pc.SendPeer(metaBytes); err != nil {
+	if err := t.SendPeer(metaBytes); err != nil {
 		return err
 	}
 
@@ -171,15 +195,15 @@ func Send(ctx context.Context, opts SendOptions) error {
 
 	switch {
 	case isStdin:
-		if err := sendReader(ctx, pc, enc, opts.Stdin); err != nil {
+		if err := sendReader(ctx, t, enc, opts.Stdin); err != nil {
 			return err
 		}
 	case isMulti:
-		if err := sendArchive(ctx, pc, enc, opts.Paths); err != nil {
+		if err := sendArchive(ctx, t, enc, opts.Paths); err != nil {
 			return err
 		}
 	default:
-		if err := sendFile(ctx, pc, enc, opts.Paths[0], size); err != nil {
+		if err := sendFile(ctx, t, enc, opts.Paths[0], size); err != nil {
 			return err
 		}
 	}
@@ -208,7 +232,7 @@ func Send(ctx context.Context, opts SendOptions) error {
 	return nil
 }
 
-func sendFile(ctx context.Context, pc *PeerConn, enc *crypto.Encryptor, path string, size int64) error {
+func sendFile(ctx context.Context, t Transport, enc *crypto.Encryptor, path string, size int64) error {
 	f, err := os.Open(path)
 	if err != nil {
 		return err
@@ -237,7 +261,7 @@ func sendFile(ctx context.Context, pc *PeerConn, enc *crypto.Encryptor, path str
 			}
 
 			encoded := protocol.EncodeChunk(seq, ciphertext)
-			if err := pc.SendPeer(encoded); err != nil {
+			if err := t.SendPeer(encoded); err != nil {
 				return err
 			}
 
@@ -254,10 +278,10 @@ func sendFile(ctx context.Context, pc *PeerConn, enc *crypto.Encryptor, path str
 	bar.Done()
 
 	done := protocol.EncodeDone(hasher.Sum(nil))
-	return pc.SendPeer(done)
+	return t.SendPeer(done)
 }
 
-func sendReader(ctx context.Context, pc *PeerConn, enc *crypto.Encryptor, r io.Reader) error {
+func sendReader(ctx context.Context, t Transport, enc *crypto.Encryptor, r io.Reader) error {
 	counter := progress.NewCounter()
 	hasher := sha256.New()
 	buf := make([]byte, crypto.ChunkSize)
@@ -280,7 +304,7 @@ func sendReader(ctx context.Context, pc *PeerConn, enc *crypto.Encryptor, r io.R
 			}
 
 			encoded := protocol.EncodeChunk(seq, ciphertext)
-			if sendErr := pc.SendPeer(encoded); sendErr != nil {
+			if sendErr := t.SendPeer(encoded); sendErr != nil {
 				return sendErr
 			}
 
@@ -297,5 +321,55 @@ func sendReader(ctx context.Context, pc *PeerConn, enc *crypto.Encryptor, r io.R
 	counter.Done()
 
 	done := protocol.EncodeDone(hasher.Sum(nil))
-	return pc.SendPeer(done)
+	return t.SendPeer(done)
+}
+
+func negotiateP2PSender(ctx context.Context, pc *PeerConn, stunServer string) (Transport, error) {
+	udpConn, candidates, err := p2p.GatherCandidates(stunServer)
+	if err != nil {
+		return nil, err
+	}
+
+	candidateData, err := protocol.EncodeCandidates(candidates)
+	if err != nil {
+		_ = udpConn.Close()
+		return nil, err
+	}
+	offer := append([]byte{protocol.PeerP2POffer}, candidateData...)
+	if err := pc.SendPeer(offer); err != nil {
+		_ = udpConn.Close()
+		return nil, err
+	}
+
+	payload, err := pc.RecvPeer()
+	if err != nil {
+		_ = udpConn.Close()
+		return nil, err
+	}
+	if len(payload) == 0 {
+		_ = udpConn.Close()
+		return nil, fmt.Errorf("empty P2P response")
+	}
+	if payload[0] == protocol.PeerP2PReject {
+		_ = udpConn.Close()
+		return nil, fmt.Errorf("receiver rejected P2P")
+	}
+	if payload[0] != protocol.PeerP2PAccept {
+		_ = udpConn.Close()
+		return nil, fmt.Errorf("unexpected P2P response: 0x%02x", payload[0])
+	}
+
+	remoteCandidates, err := protocol.DecodeCandidates(payload[1:])
+	if err != nil {
+		_ = udpConn.Close()
+		return nil, err
+	}
+
+	remoteAddr, err := p2p.HolePunch(ctx, udpConn, remoteCandidates, 5*time.Second)
+	if err != nil {
+		_ = udpConn.Close()
+		return nil, err
+	}
+
+	return p2p.NewUDPConn(ctx, udpConn, remoteAddr), nil
 }

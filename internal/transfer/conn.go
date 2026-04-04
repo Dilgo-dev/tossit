@@ -7,6 +7,8 @@ import (
 	"github.com/coder/websocket"
 )
 
+var _ Transport = (*PeerConn)(nil)
+
 type PeerConn struct {
 	ws  *websocket.Conn
 	ctx context.Context

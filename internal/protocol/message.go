@@ -23,7 +23,29 @@ const (
 	PeerDone      byte = 0x12
 	PeerResumeReq byte = 0x13
 	PeerAck       byte = 0x14
+
+	PeerP2POffer  byte = 0x20
+	PeerP2PAccept byte = 0x21
+	PeerP2PReject byte = 0x22
 )
+
+type Candidate struct {
+	IP   string `json:"ip"`
+	Port int    `json:"port"`
+	Type string `json:"type"`
+}
+
+func EncodeCandidates(candidates []Candidate) ([]byte, error) {
+	return json.Marshal(candidates)
+}
+
+func DecodeCandidates(data []byte) ([]Candidate, error) {
+	var candidates []Candidate
+	if err := json.Unmarshal(data, &candidates); err != nil {
+		return nil, err
+	}
+	return candidates, nil
+}
 
 type Message struct {
 	Type    byte

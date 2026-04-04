@@ -13,6 +13,7 @@ import (
 	"github.com/Dilgo-dev/tossit/internal/color"
 	"github.com/Dilgo-dev/tossit/internal/crypto"
 	"github.com/Dilgo-dev/tossit/internal/history"
+	"github.com/Dilgo-dev/tossit/internal/p2p"
 	"github.com/Dilgo-dev/tossit/internal/progress"
 	"github.com/Dilgo-dev/tossit/internal/protocol"
 	"github.com/coder/websocket"
@@ -24,6 +25,8 @@ type ReceiveOptions struct {
 	Code       string
 	OutputDir  string
 	Password   string
+	Direct     bool
+	StunServer string
 }
 
 func Receive(ctx context.Context, opts ReceiveOptions) error {
@@ -57,28 +60,48 @@ func Receive(ctx context.Context, opts ReceiveOptions) error {
 	}
 
 	var key []byte
+	var t Transport = pc
+
 	switch msg.Type {
 	case protocol.MsgStored:
 		fmt.Println(color.Dim("Downloading stored transfer..."))
 		key = crypto.DeriveKeyFromCode(opts.Code, opts.Password)
 	case protocol.MsgData:
 		fmt.Println(color.Dim("Establishing secure channel..."))
-		first := true
-		key, err = crypto.ReceiverKeyExchange(pc.SendPeer, func() ([]byte, error) {
-			if first {
-				first = false
-				return msg.Payload, nil
+
+		if len(msg.Payload) > 0 && msg.Payload[0] == protocol.PeerP2POffer {
+			if udpT, p2pErr := negotiateP2PReceiver(ctx, pc, msg.Payload[1:], opts.StunServer); p2pErr == nil {
+				fmt.Println(color.Green("Direct P2P connection established."))
+				t = udpT
+			} else {
+				fmt.Println(color.Yellow("P2P failed, falling back to relay."))
+				reject := []byte{protocol.PeerP2PReject}
+				_ = pc.SendPeer(reject)
 			}
-			return pc.RecvPeer()
-		}, opts.Code)
-		if err != nil {
-			return fmt.Errorf("key exchange failed: %w", err)
+			key, err = crypto.ReceiverKeyExchange(t.SendPeer, func() ([]byte, error) {
+				return t.RecvPeer()
+			}, opts.Code)
+			if err != nil {
+				return fmt.Errorf("key exchange failed: %w", err)
+			}
+		} else {
+			first := true
+			key, err = crypto.ReceiverKeyExchange(pc.SendPeer, func() ([]byte, error) {
+				if first {
+					first = false
+					return msg.Payload, nil
+				}
+				return pc.RecvPeer()
+			}, opts.Code)
+			if err != nil {
+				return fmt.Errorf("key exchange failed: %w", err)
+			}
 		}
 	default:
 		return fmt.Errorf("unexpected message from relay: %d", msg.Type)
 	}
 
-	payload, err := pc.RecvPeer()
+	payload, err := t.RecvPeer()
 	if err != nil {
 		return err
 	}
@@ -95,11 +118,11 @@ func Receive(ctx context.Context, opts ReceiveOptions) error {
 	}
 
 	if meta.IsDir {
-		if err := receiveArchive(ctx, pc, dec, opts.OutputDir); err != nil {
+		if err := receiveArchive(ctx, t, dec, opts.OutputDir); err != nil {
 			return err
 		}
 	} else {
-		if err := receiveFile(ctx, pc, dec, meta, opts.OutputDir); err != nil {
+		if err := receiveFile(ctx, t, dec, meta, opts.OutputDir); err != nil {
 			return err
 		}
 	}
@@ -117,7 +140,7 @@ func Receive(ctx context.Context, opts ReceiveOptions) error {
 	return nil
 }
 
-func receiveFile(ctx context.Context, pc *PeerConn, dec *crypto.Decryptor, meta protocol.Metadata, outputDir string) error {
+func receiveFile(ctx context.Context, t Transport, dec *crypto.Decryptor, meta protocol.Metadata, outputDir string) error {
 	outPath := filepath.Join(outputDir, meta.Name)
 	f, err := os.OpenFile(outPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, meta.Mode)
 	if err != nil {
@@ -135,7 +158,7 @@ func receiveFile(ctx context.Context, pc *PeerConn, dec *crypto.Decryptor, meta 
 		default:
 		}
 
-		payload, err := pc.RecvPeer()
+		payload, err := t.RecvPeer()
 		if err != nil {
 			return err
 		}
@@ -182,4 +205,35 @@ func hashEqual(a, b []byte) bool {
 		diff |= a[i] ^ b[i]
 	}
 	return diff == 0
+}
+
+func negotiateP2PReceiver(ctx context.Context, pc *PeerConn, offerPayload []byte, stunServer string) (Transport, error) {
+	remoteCandidates, err := protocol.DecodeCandidates(offerPayload)
+	if err != nil {
+		return nil, err
+	}
+
+	udpConn, candidates, err := p2p.GatherCandidates(stunServer)
+	if err != nil {
+		return nil, err
+	}
+
+	candidateData, err := protocol.EncodeCandidates(candidates)
+	if err != nil {
+		_ = udpConn.Close()
+		return nil, err
+	}
+	accept := append([]byte{protocol.PeerP2PAccept}, candidateData...)
+	if err := pc.SendPeer(accept); err != nil {
+		_ = udpConn.Close()
+		return nil, err
+	}
+
+	remoteAddr, err := p2p.HolePunch(ctx, udpConn, remoteCandidates, 5*time.Second)
+	if err != nil {
+		_ = udpConn.Close()
+		return nil, err
+	}
+
+	return p2p.NewUDPConn(ctx, udpConn, remoteAddr), nil
 }
