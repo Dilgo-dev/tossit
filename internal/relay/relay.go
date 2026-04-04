@@ -465,7 +465,7 @@ func (r *Relay) replayStored(conn *websocket.Conn, req *http.Request, code strin
 
 func (r *Relay) readTransferMeta(code string) *transferMeta {
 	metaPath := filepath.Join(r.cfg.StorageDir, code, "meta.json")
-	data, err := os.ReadFile(metaPath)
+	data, err := os.ReadFile(metaPath) //nolint:gosec // path built from trusted storage dir + code
 	if err != nil {
 		return nil
 	}
