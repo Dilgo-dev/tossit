@@ -11,7 +11,7 @@ import (
 )
 
 func runReceive(args []string) {
-	relayURL, relayToken, _, dir, password, _, direct, stunServer, _, _, remaining := parseFlags(args)
+	relayURL, relayToken, _, dir, password, _, direct, stunServer, _, _, limit, remaining := parseFlags(args)
 	if len(remaining) == 0 {
 		fmt.Fprintln(os.Stderr, "Usage: tossit receive [--relay URL] [--dir PATH] [--password PW] <code>")
 		os.Exit(1)
@@ -35,6 +35,16 @@ func runReceive(args []string) {
 	ctx, cancel := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer cancel()
 
+	var limitBytes int64
+	if limit != "" {
+		n, err := parseLimit(limit)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s invalid --limit: %s (e.g. 1MB/s, 500KB/s)\n", color.BoldRed("Error:"), err)
+			os.Exit(1)
+		}
+		limitBytes = n
+	}
+
 	opts := transfer.ReceiveOptions{
 		RelayURL:   relayURL,
 		RelayToken: relayToken,
@@ -43,6 +53,7 @@ func runReceive(args []string) {
 		Password:   password,
 		Direct:     direct,
 		StunServer: stunServer,
+		Limit:      limitBytes,
 	}
 
 	if err := transfer.Receive(ctx, opts); err != nil {

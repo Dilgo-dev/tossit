@@ -34,6 +34,7 @@ type SendOptions struct {
 	StunServer string
 	Multi      int
 	Approve    bool
+	Limit      int64
 }
 
 func Send(ctx context.Context, opts SendOptions) error {
@@ -172,6 +173,10 @@ func Send(ctx context.Context, opts SendOptions) error {
 	} else {
 		fmt.Println(color.Dim("Uploading..."))
 		key = crypto.DeriveKeyFromCode(code, opts.Password)
+	}
+
+	if opts.Limit > 0 {
+		t = NewThrottledTransport(t, opts.Limit)
 	}
 
 	meta := protocol.Metadata{
@@ -336,7 +341,12 @@ func sendReader(ctx context.Context, t Transport, enc *crypto.Encryptor, r io.Re
 
 func approvalLoop(ctx context.Context, pc *PeerConn) error {
 	fmt.Println(color.Dim("Waiting for download requests... (Ctrl+C to stop)"))
-	reader := bufio.NewReader(os.Stdin)
+	tty, err := os.Open("/dev/tty")
+	if err != nil {
+		return fmt.Errorf("cannot open terminal for approval prompt: %w", err)
+	}
+	defer func() { _ = tty.Close() }()
+	reader := bufio.NewReader(tty)
 
 	for {
 		msg, err := pc.RecvRaw()

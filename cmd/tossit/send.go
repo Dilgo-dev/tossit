@@ -13,7 +13,7 @@ import (
 )
 
 func runSend(args []string) {
-	relayURL, relayToken, stream, _, password, expires, direct, stunServer, multi, approve, paths := parseFlags(args)
+	relayURL, relayToken, stream, _, password, expires, direct, stunServer, multi, approve, limit, paths := parseFlags(args)
 
 	piped := stdinIsPipe()
 	if len(paths) == 0 && !piped {
@@ -60,9 +60,15 @@ func runSend(args []string) {
 		fmt.Fprintf(os.Stderr, "%s --approve cannot be used with --stream or --direct\n", color.BoldRed("Error:"))
 		os.Exit(1)
 	}
-	if approve && piped {
-		fmt.Fprintf(os.Stderr, "%s --approve cannot be used with piped input\n", color.BoldRed("Error:"))
-		os.Exit(1)
+
+	var limitBytes int64
+	if limit != "" {
+		n, err := parseLimit(limit)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "%s invalid --limit: %s (e.g. 1MB/s, 500KB/s)\n", color.BoldRed("Error:"), err)
+			os.Exit(1)
+		}
+		limitBytes = n
 	}
 
 	opts := transfer.SendOptions{
@@ -76,6 +82,7 @@ func runSend(args []string) {
 		StunServer: stunServer,
 		Multi:      multiCount,
 		Approve:    approve,
+		Limit:      limitBytes,
 	}
 
 	if piped && len(paths) == 0 {
