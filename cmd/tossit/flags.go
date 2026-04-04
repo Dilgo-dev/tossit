@@ -2,7 +2,7 @@ package main
 
 const defaultRelay = "wss://relay.tossit.dev/ws"
 
-func parseFlags(args []string) (relayURL string, relayToken string, stream bool, dir string, password string, expires string, direct bool, stunServer string, multi string, remaining []string) {
+func parseFlags(args []string) (relayURL string, relayToken string, stream bool, dir string, password string, expires string, direct bool, stunServer string, multi string, approve bool, remaining []string) {
 	relayURL = defaultRelay
 	for i := 0; i < len(args); i++ {
 		switch args[i] {
@@ -45,6 +45,8 @@ func parseFlags(args []string) (relayURL string, relayToken string, stream bool,
 				multi = args[i+1]
 				i++
 			}
+		case "--approve":
+			approve = true
 		default:
 			remaining = append(remaining, args[i])
 		}

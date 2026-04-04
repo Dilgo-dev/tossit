@@ -16,7 +16,7 @@ import (
 
 func TestSendReceiveFile(t *testing.T) {
 	r := relay.New(relay.Config{StorageDir: t.TempDir()})
-	srv := &http.Server{Addr: ":0"}
+	srv := &http.Server{Addr: ":0", ReadHeaderTimeout: 10 * time.Second}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", r.HandleConn)
 	srv.Handler = mux
@@ -25,8 +25,8 @@ func TestSendReceiveFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	go srv.Serve(ln)
-	defer srv.Close()
+	go func() { _ = srv.Serve(ln) }()
+	defer func() { _ = srv.Close() }()
 
 	relayURL := fmt.Sprintf("ws://%s/ws", ln.Addr().String())
 
@@ -37,7 +37,9 @@ func TestSendReceiveFile(t *testing.T) {
 	for i := range data {
 		data[i] = byte(i % 256)
 	}
-	os.WriteFile(testFile, data, 0644)
+	if err := os.WriteFile(testFile, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
 
 	expectedHash := sha256.Sum256(data)
 
@@ -49,7 +51,9 @@ func TestSendReceiveFile(t *testing.T) {
 	// Send generates the code internally. Let's just test via goroutines.
 
 	recvDir := filepath.Join(tmpDir, "recv")
-	os.MkdirAll(recvDir, 0755)
+	if err := os.MkdirAll(recvDir, 0o750); err != nil {
+		t.Fatal(err)
+	}
 
 	sendDone := make(chan error, 1)
 	codeCh := make(chan string, 1)
@@ -67,7 +71,7 @@ func TestSendReceiveFile(t *testing.T) {
 			RelayURL: relayURL,
 			Paths:    []string{testFile},
 		})
-		pw.Close()
+		_ = pw.Close()
 		sendDone <- err
 	}()
 
@@ -100,7 +104,7 @@ func TestSendReceiveFile(t *testing.T) {
 		}
 
 		// Verify
-		received, err := os.ReadFile(filepath.Join(recvDir, "test.bin"))
+		received, err := os.ReadFile(filepath.Clean(filepath.Join(recvDir, "test.bin")))
 		if err != nil {
 			t.Fatal(err)
 		}
