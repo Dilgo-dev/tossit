@@ -23,7 +23,7 @@ func SavePartialState(outputDir string, state PartialState) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(partialPath(outputDir, state.FileName), data, 0o644)
+	return os.WriteFile(partialPath(outputDir, state.FileName), data, 0o600)
 }
 
 func LoadPartialState(outputDir, fileName string) (*PartialState, error) {
@@ -42,5 +42,5 @@ func LoadPartialState(outputDir, fileName string) (*PartialState, error) {
 }
 
 func ClearPartialState(outputDir, fileName string) {
-	os.Remove(partialPath(outputDir, fileName))
+	_ = os.Remove(partialPath(outputDir, fileName))
 }

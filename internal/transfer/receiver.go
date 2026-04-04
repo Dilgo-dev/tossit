@@ -141,12 +141,12 @@ func Receive(ctx context.Context, opts ReceiveOptions) error {
 }
 
 func receiveFile(ctx context.Context, t Transport, dec *crypto.Decryptor, meta protocol.Metadata, outputDir string) error {
-	outPath := filepath.Join(outputDir, meta.Name)
+	outPath := filepath.Clean(filepath.Join(outputDir, filepath.Base(meta.Name)))
 	f, err := os.OpenFile(outPath, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, meta.Mode)
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	bar := progress.New(meta.Size)
 	hasher := sha256.New()
@@ -170,7 +170,7 @@ func receiveFile(ctx context.Context, t Transport, dec *crypto.Decryptor, meta p
 			}
 			actualHash := hasher.Sum(nil)
 			if !hashEqual(expectedHash, actualHash) {
-				os.Remove(outPath)
+				_ = os.Remove(outPath)
 				return fmt.Errorf("file hash mismatch: transfer corrupted")
 			}
 			bar.Done()

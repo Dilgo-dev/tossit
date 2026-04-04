@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/Dilgo-dev/tossit/internal/color"
 	"github.com/Dilgo-dev/tossit/internal/crypto"
@@ -28,7 +29,7 @@ func sendArchive(ctx context.Context, t Transport, enc *crypto.Encryptor, paths 
 				break
 			}
 		}
-		tw.Close()
+		_ = tw.Close()
 		pw.CloseWithError(writeErr)
 	}()
 
@@ -107,7 +108,7 @@ func receiveArchive(ctx context.Context, t Transport, dec *crypto.Decryptor, out
 					return
 				}
 				expectedHash = h
-				pw.Close()
+				_ = pw.Close()
 				return
 			}
 
@@ -151,7 +152,26 @@ func receiveArchive(ctx context.Context, t Transport, dec *crypto.Decryptor, out
 }
 
 func addToTar(tw *tar.Writer, path string) error {
-	return filepath.Walk(path, func(file string, fi os.FileInfo, err error) error {
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return err
+	}
+	absBase := filepath.Dir(absPath)
+
+	var files []string
+	err = filepath.WalkDir(absPath, func(file string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		files = append(files, file)
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	for _, file := range files {
+		fi, err := os.Lstat(file)
 		if err != nil {
 			return err
 		}
@@ -161,7 +181,7 @@ func addToTar(tw *tar.Writer, path string) error {
 			return err
 		}
 
-		rel, err := filepath.Rel(filepath.Dir(path), file)
+		rel, err := filepath.Rel(absBase, file)
 		if err != nil {
 			return err
 		}
@@ -172,20 +192,33 @@ func addToTar(tw *tar.Writer, path string) error {
 		}
 
 		if fi.IsDir() {
-			return nil
+			continue
 		}
 
-		f, err := os.Open(file)
-		if err != nil {
+		if err := copyFileToTar(tw, file); err != nil {
 			return err
 		}
-		defer f.Close()
-		_, err = io.Copy(tw, f)
-		return err
-	})
+	}
+	return nil
 }
 
+func copyFileToTar(tw *tar.Writer, path string) error {
+	f, err := os.Open(filepath.Clean(path))
+	if err != nil {
+		return err
+	}
+	defer func() { _ = f.Close() }()
+	_, err = io.Copy(tw, f)
+	return err
+}
+
+const maxExtractSize = 10 * 1024 * 1024 * 1024
+
 func extractTar(r io.Reader, outputDir string) error {
+	absOutput, err := filepath.Abs(outputDir)
+	if err != nil {
+		return err
+	}
 	tr := tar.NewReader(r)
 	for {
 		header, err := tr.Next()
@@ -196,30 +229,38 @@ func extractTar(r io.Reader, outputDir string) error {
 			return err
 		}
 
-		target := filepath.Join(outputDir, header.Name)
-
-		if !filepath.IsAbs(target) {
-			target = filepath.Join(outputDir, filepath.Clean(header.Name))
+		clean := filepath.Clean(header.Name)
+		target := filepath.Join(absOutput, clean)
+		if !strings.HasPrefix(target, absOutput+string(os.PathSeparator)) && target != absOutput {
+			return fmt.Errorf("tar entry %q escapes output directory", header.Name)
 		}
+
+		mode := header.Mode & 0o777
 
 		switch header.Typeflag {
 		case tar.TypeDir:
-			if err := os.MkdirAll(target, os.FileMode(header.Mode)); err != nil {
+			if err := os.MkdirAll(target, os.FileMode(mode)&0o750); err != nil {
 				return err
 			}
 		case tar.TypeReg:
-			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			if err := os.MkdirAll(filepath.Dir(target), 0o750); err != nil {
 				return err
 			}
-			f, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, os.FileMode(header.Mode))
-			if err != nil {
+			if err := extractFile(target, tr, os.FileMode(mode)); err != nil {
 				return err
 			}
-			if _, err := io.Copy(f, tr); err != nil {
-				f.Close()
-				return err
-			}
-			f.Close()
 		}
 	}
+}
+
+func extractFile(path string, r io.Reader, mode os.FileMode) error {
+	f, err := os.OpenFile(filepath.Clean(path), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+	if err != nil {
+		return err
+	}
+	_, err = io.Copy(f, io.LimitReader(r, maxExtractSize))
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	return err
 }

@@ -54,7 +54,7 @@ func (p *PeerConn) RecvPeer() ([]byte, error) {
 }
 
 func (p *PeerConn) Close() {
-	p.ws.Close(websocket.StatusNormalClosure, "done")
+	_ = p.ws.Close(websocket.StatusNormalClosure, "done")
 }
 
 type RelayError struct {
