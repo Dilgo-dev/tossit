@@ -19,6 +19,10 @@ var trueColor = func() bool {
 	if ct == "truecolor" || ct == "24bit" {
 		return true
 	}
+	// Windows Terminal supports true color
+	if os.Getenv("WT_SESSION") != "" {
+		return true
+	}
 	if os.Getenv("TERM_PROGRAM") == "Apple_Terminal" {
 		return false
 	}

@@ -1,3 +1,10 @@
+# Enable script execution if restricted (required for PowerShell profile/completions)
+$policy = Get-ExecutionPolicy -Scope CurrentUser
+if ($policy -eq 'Restricted' -or $policy -eq 'Undefined') {
+    Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force
+    Write-Host "Set execution policy to RemoteSigned for current user"
+}
+
 $repo = "Dilgo-dev/tossit"
 $binary = "tossit"
 
@@ -48,8 +55,8 @@ Register-ArgumentCompleter -Native -CommandName tossit -ScriptBlock {
     }
 
     $opts = switch ($cmd) {
-        { $_ -in 'send', 's' }       { @('--relay', '--relay-token', '--stream', '--password', '-p') }
-        { $_ -in 'receive', 'recv', 'r' } { @('--relay', '--relay-token', '--password', '-p', '--dir', '-d') }
+        { $_ -in 'send', 's' }       { @('--relay', '--relay-token', '--stream', '--password', '-p', '--direct', '--stun', '--multi', '-m', '--approve', '--limit', '-l', '--expires', '-e') }
+        { $_ -in 'receive', 'recv', 'r' } { @('--relay', '--relay-token', '--password', '-p', '--dir', '-d', '--direct', '--stun', '--limit', '-l') }
         'relay'                       { @('--config', '--port', '--storage', '--expire', '--max-size', '--rate-limit', '--auth-token', '--allow-ips', '--ui', '--ui-password', '--admin-password', '--help') }
         default                       { $commands + $globalOpts }
     }
